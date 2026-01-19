@@ -29,26 +29,29 @@ export default function DashboardPage() {
   }, [])
 
   const fetchData = useCallback(async (role: string, id: string) => {
+    // Rol ismindeki boşlukları temizleyip küçük harfe çevirerek hata payını sıfırlıyoruz
+    const normalizedRole = role.trim().toLowerCase();
+
     let query = supabase.from('ihbarlar').select(`
       *,
       profiles (full_name),
       calisma_gruplari (grup_adi)
     `)
     
-    // --- GÜNCELLENEN KISITLAMA MANTIĞI ---
-    if (role === 'Saha Personeli') {
-      // SAHA PERSONELİ: Sadece bizzat kendi üzerine atanmış işleri görür (Havuzu/Boştakileri göremez)
+    // --- KESİN KISITLAMA MANTIĞI ---
+    if (normalizedRole === 'saha personeli') {
+      // SAHA PERSONELİ: Havuzu, grupları veya başkasının işini ASLA göremez.
+      // Sadece bizzat kendi ID'si ile eşleşen (atanmış veya tamamlamış) işleri görür.
       query = query.eq('atanan_personel', id)
     } 
-    else if (role === 'Formen') {
-      // FORMEN: Boştaki işleri + Kendi grubundaki işleri + Kendi üzerindeki işleri görür
+    else if (normalizedRole === 'formen') {
+      // FORMEN: Boştaki işler + Grubundakiler + Kendi üzerindekiler
       const { data: userGroups } = await supabase.from('grup_uyeleri').select('grup_id').eq('profil_id', id)
       const groupIds = userGroups?.map(g => g.grup_id) || []
-      
       const groupFilter = groupIds.length > 0 ? `,atanan_grup_id.in.(${groupIds.join(',')})` : ''
       query = query.or(`atanan_personel.is.null,atanan_personel.eq.${id}${groupFilter}`)
     }
-    // Çağrı Merkezi, Admin vb. tüm işleri görmeye devam eder.
+    // Admin, Müdür ve Çağrı Merkezi filtreye takılmadan her şeyi görmeye devam eder.
 
     const { data: ihbarData, error } = await query.order('created_at', { ascending: false })
     
@@ -75,9 +78,13 @@ export default function DashboardPage() {
       if (user) {
         setUserId(user.id)
         const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
+        
+        // Veritabanındaki rolü çek, yoksa 'Saha Personeli' ata
         const role = profile?.role || 'Saha Personeli'
         setUserName(profile?.full_name || 'Kullanıcı')
         setUserRole(role)
+        
+        // Veriyi çekmeye gönder
         fetchData(role, user.id)
       } else {
         router.push('/')
