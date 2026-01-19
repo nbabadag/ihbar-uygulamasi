@@ -11,21 +11,49 @@ export default function RaporlarPage() {
   const [yukleniyor, setYukleniyor] = useState(false)
   const [raporVerisi, setRaporVerisi] = useState<any[]>([])
   const [izlendi, setIzlendi] = useState(false)
+  const [authYukleniyor, setAuthYukleniyor] = useState(true) // Yetki kontrolü için
 
   // Canlı Filtre State'leri
   const [personelFiltre, setPersonelFiltre] = useState('')
   const [aciklamaFiltre, setAciklamaFiltre] = useState('')
   const [konuFiltre, setKonuFiltre] = useState('')
 
-  // Admin Kontrolü
+  // Gelişmiş Admin/Müdür Kontrolü
   useEffect(() => {
-    const checkAdmin = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return router.push('/')
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-      if (profile?.role !== 'Admin') router.push('/dashboard')
+    const checkUserAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          router.push('/')
+          return
+        }
+
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+        if (error || !profile) {
+          console.error("Profil bulunamadı");
+          router.push('/dashboard')
+          return
+        }
+
+        // Yetkili roller listesi
+        const yetkiliRoller = ['Admin', 'Müdür', 'Yönetici', 'Mühendis']
+        if (!yetkiliRoller.includes(profile.role)) {
+          console.warn("Yetkisiz erişim denemesi:", profile.role);
+          router.push('/dashboard')
+          return
+        }
+
+        setAuthYukleniyor(false) // Yetki tamsa sayfayı göster
+      } catch (err) {
+        router.push('/dashboard')
+      }
     }
-    checkAdmin()
+    checkUserAccess()
   }, [router])
 
   // Veritabanından Sorgulama
@@ -34,11 +62,12 @@ export default function RaporlarPage() {
     setYukleniyor(true)
     setIzlendi(false)
 
+    // Sorgu: atanan_personel ilişkisini profiles tablosuyla eşliyoruz
     const { data, error } = await supabase
       .from('ihbarlar')
       .select(`
         *,
-        profiles!atanan_personel (full_name),
+        profiles (full_name),
         ihbar_malzemeleri (id, malzeme_kodu, malzeme_adi, kullanim_adedi)
       `)
       .eq('durum', 'Tamamlandi')
@@ -46,7 +75,7 @@ export default function RaporlarPage() {
       .lte('kapatma_tarihi', bitis)
 
     if (error) {
-      alert("Hata: " + error.message)
+      alert("Sorgu Hatası: " + error.message)
     } else {
       setRaporVerisi(data || [])
       setIzlendi(true)
@@ -54,7 +83,6 @@ export default function RaporlarPage() {
     setYukleniyor(false)
   }
 
-  // Akıllı Üçlü Filtreleme
   const filtrelenmisVeri = useMemo(() => {
     return raporVerisi.filter(ihbar => {
       const pMatch = (ihbar.profiles?.full_name || "").toLowerCase().includes(personelFiltre.toLowerCase())
@@ -64,7 +92,20 @@ export default function RaporlarPage() {
     })
   }, [raporVerisi, personelFiltre, aciklamaFiltre, konuFiltre])
 
-  // Filtrelenmiş Veriyi Excel Yapma
+  const stats = useMemo(() => {
+    if (!filtrelenmisVeri.length) return null;
+    const toplamMalzeme = filtrelenmisVeri.reduce((acc, curr) => 
+      acc + (curr.ihbar_malzemeleri?.reduce((mAcc: number, mCurr: any) => mAcc + (mCurr.kullanim_adedi || 0), 0) || 0), 0)
+    
+    const pDagitim = filtrelenmisVeri.reduce((acc: any, curr) => {
+      const name = curr.profiles?.full_name || "Bilinmiyor";
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    }, {});
+
+    return { toplamMalzeme, pDagitim };
+  }, [filtrelenmisVeri]);
+
   const excelIndir = () => {
     if (filtrelenmisVeri.length === 0) return
     const excelHazirlik = filtrelenmisVeri.flatMap(ihbar => {
@@ -77,11 +118,11 @@ export default function RaporlarPage() {
         "Kapatma Tarihi": new Date(ihbar.kapatma_tarihi).toLocaleDateString('tr-TR'),
         "Bitiş Saati": ihbar.bitis_saati
       }
-      if (ihbar.ihbar_malzemeleri.length === 0) return [{ ...temel, "Malzeme": "Yok", "Adet": 0 }]
+      if (!ihbar.ihbar_malzemeleri || ihbar.ihbar_malzemeleri.length === 0) 
+        return [{ ...temel, "Malzeme": "Yok", "Adet": 0 }]
+      
       return ihbar.ihbar_malzemeleri.map((m: any) => ({
-        ...temel,
-        "Malzeme": m.malzeme_adi,
-        "Adet": m.kullanim_adedi
+        ...temel, "Malzeme": m.malzeme_adi, "Adet": m.kullanim_adedi
       }))
     })
     const ws = XLSX.utils.json_to_sheet(excelHazirlik)
@@ -90,94 +131,124 @@ export default function RaporlarPage() {
     XLSX.writeFile(wb, `IFS_Saha_Raporu_${new Date().toLocaleDateString()}.xlsx`)
   }
 
+  // Yetki kontrolü sürerken yükleniyor ekranı göster
+  if (authYukleniyor) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-blue-900 font-black italic animate-pulse">YETKİ KONTROL EDİLİYOR...</div>
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 flex text-black">
+    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-black">
       {/* Sol Menü */}
-      <div className="w-64 bg-blue-900 text-white p-6 shadow-xl flex flex-col fixed h-full">
-        <h2 className="text-xl font-bold mb-8 italic underline decoration-blue-400 tracking-wider uppercase">İhbar Paneli</h2>
-        <nav className="space-y-4 flex-1 font-bold">
-          <div onClick={() => router.push('/dashboard')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2">🏠 Ana Sayfa</div>
-          <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 bg-blue-800 rounded-lg cursor-pointer shadow-md flex items-center gap-2 font-black">📊 Raporlama</div>
+      <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full z-50">
+        <h2 className="text-xl font-black mb-8 italic text-blue-100 tracking-tighter uppercase">SAHA 360</h2>
+        <nav className="space-y-3 flex-1 font-bold text-sm">
+          <div onClick={() => router.push('/dashboard')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition flex items-center gap-2">🏠 Ana Sayfa</div>
+          <div className="p-3 bg-blue-700 rounded-xl flex items-center gap-2 border-l-4 border-blue-300">📊 Raporlama</div>
         </nav>
-        <button onClick={() => router.push('/dashboard')} className="w-full bg-blue-700 p-3 rounded-lg hover:bg-blue-800 transition font-bold text-sm">← Geri Dön</button>
       </div>
 
-      <div className="flex-1 p-10 ml-64 font-bold">
-        <header className="mb-10 border-b pb-5">
-          <h1 className="text-3xl font-bold text-gray-800">📊 Rapor Önizleme ve Filtreleme</h1>
+      <div className="flex-1 p-4 md:p-10 md:ml-64 font-bold">
+        <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center border-b pb-5 gap-4">
+          <h1 className="text-2xl md:text-3xl font-black text-gray-800 italic uppercase">Analitik Rapor Merkezi</h1>
+          <div className="text-[10px] bg-blue-100 text-blue-700 px-4 py-2 rounded-full font-black uppercase">Üst Yönetim Paneli</div>
         </header>
 
         {/* Sorgu Paneli */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-end gap-4 mb-6">
-          <div className="flex-1 space-y-2">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Başlangıç</label>
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-gray-400 uppercase">Başlangıç</label>
             <input type="date" className="w-full p-3 bg-gray-50 border rounded-xl outline-none" value={baslangic} onChange={e => setBaslangic(e.target.value)} />
           </div>
-          <div className="flex-1 space-y-2">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Bitiş</label>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-gray-400 uppercase">Bitiş</label>
             <input type="date" className="w-full p-3 bg-gray-50 border rounded-xl outline-none" value={bitis} onChange={e => setBitis(e.target.value)} />
           </div>
-          <button onClick={raporuSorgula} className="bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 font-black transition-all active:scale-95">{yukleniyor ? '...' : 'SORGULA'}</button>
+          <div className="flex items-end">
+            <button onClick={raporuSorgula} className="w-full bg-blue-600 text-white p-3.5 rounded-xl hover:bg-blue-700 font-black transition-all shadow-lg active:scale-95">
+              {yukleniyor ? 'SORGULANIYOR...' : 'VERİLERİ GETİR'}
+            </button>
+          </div>
         </div>
 
-        {/* Canlı Filtreleme Paneli (Sadece Sorgu Sonrası Görünür) */}
         {izlendi && (
-          <div className="bg-white p-6 rounded-3xl border-2 border-blue-100 grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 animate-in slide-in-from-top duration-300">
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-blue-500 uppercase">👤 Personel</label>
-              <input type="text" placeholder="İsim ara..." className="w-full p-3 bg-blue-50/50 border rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-200" value={personelFiltre} onChange={e => setPersonelFiltre(e.target.value)} />
+          <div className="animate-in fade-in duration-500">
+            {/* KPI Özet Kartları */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-blue-600 text-white p-6 rounded-[2rem] shadow-lg shadow-blue-100">
+                <span className="text-[10px] font-black uppercase opacity-70 italic">Tamamlanan İş</span>
+                <div className="text-4xl font-black italic">{filtrelenmisVeri.length}</div>
+              </div>
+              <div className="bg-emerald-500 text-white p-6 rounded-[2rem] shadow-lg shadow-emerald-100">
+                <span className="text-[10px] font-black uppercase opacity-70 italic">Kullanılan Malzeme</span>
+                <div className="text-4xl font-black italic">{stats?.toplamMalzeme || 0} <span className="text-sm">Adet</span></div>
+              </div>
+              <div className="bg-white p-6 rounded-[2rem] border-2 border-blue-100 flex flex-col justify-center">
+                <span className="text-[10px] font-black uppercase text-blue-500 italic">Personel Katılımı</span>
+                <div className="text-lg font-black text-gray-700 mt-1">{Object.keys(stats?.pDagitim || {}).length} Aktif Usta</div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-blue-500 uppercase">📋 Konu</label>
-              <input type="text" placeholder="Konu ara..." className="w-full p-3 bg-blue-50/50 border rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-200" value={konuFiltre} onChange={e => setKonuFiltre(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-blue-500 uppercase">📝 Açıklama</label>
-              <input type="text" placeholder="İçerik ara..." className="w-full p-3 bg-blue-50/50 border rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-200" value={aciklamaFiltre} onChange={e => setAciklamaFiltre(e.target.value)} />
-            </div>
-          </div>
-        )}
 
-        {/* Önizleme Tablosu */}
-        {izlendi && (
-          <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-            <div className="p-6 bg-gray-50 flex justify-between items-center border-b">
-              <span className="text-sm font-black text-gray-500 uppercase">Bulunan Sonuç: <span className="text-blue-600">{filtrelenmisVeri.length}</span></span>
-              <button onClick={excelIndir} className="bg-green-600 text-white px-6 py-2 rounded-xl hover:bg-green-700 text-xs font-black shadow-lg flex items-center gap-2">📥 EXCEL İNDİR</button>
+            {/* Canlı Filtreleme */}
+            <div className="bg-blue-900 p-6 rounded-[2rem] grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 shadow-xl">
+              <input type="text" placeholder="👤 Personel..." className="p-3 bg-blue-800 text-white placeholder-blue-300 border-none rounded-xl outline-none text-xs font-bold" value={personelFiltre} onChange={e => setPersonelFiltre(e.target.value)} />
+              <input type="text" placeholder="📋 Konu..." className="p-3 bg-blue-800 text-white placeholder-blue-300 border-none rounded-xl outline-none text-xs font-bold" value={konuFiltre} onChange={e => setKonuFiltre(e.target.value)} />
+              <input type="text" placeholder="📝 Açıklama..." className="p-3 bg-blue-800 text-white placeholder-blue-300 border-none rounded-xl outline-none text-xs font-bold" value={aciklamaFiltre} onChange={e => setAciklamaFiltre(e.target.value)} />
+              <button onClick={() => {setPersonelFiltre(''); setKonuFiltre(''); setAciklamaFiltre('')}} className="bg-blue-700 text-blue-100 p-3 rounded-xl text-[10px] font-black hover:bg-blue-600 uppercase italic">Filtreleri Temizle</button>
             </div>
-            <div className="overflow-x-auto max-h-[600px]">
-              <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-white shadow-sm text-[10px] uppercase text-gray-400 font-black">
-                  <tr>
-                    <th className="p-4">İş Emri</th>
-                    <th className="p-4">Personel</th>
-                    <th className="p-4">Konu</th>
-                    <th className="p-4">İhbar Açıklaması</th>
-                    <th className="p-4">Malzemeler</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filtrelenmisVeri.map(ihbar => (
-                    <tr key={ihbar.id} className="hover:bg-gray-50 transition">
-                      <td className="p-4 font-mono text-blue-600 font-bold">{ihbar.ifs_is_emri_no}</td>
-                      <td className="p-4 whitespace-nowrap">👤 {ihbar.profiles?.full_name}</td>
-                      <td className="p-4 font-black text-[10px] uppercase tracking-tighter"><span className="bg-gray-100 px-2 py-1 rounded-md">{ihbar.konu}</span></td>
-                      <td className="p-4 text-xs italic text-gray-600 leading-relaxed">"{ihbar.aciklama}"</td>
-                      <td className="p-4">
-                      {ihbar.ihbar_malzemeleri.map((m: any, index: number) => (
-  // Key değerini m.id ve index birleşimi yaparak benzersiz kılıyoruz
-  <div key={`${m.id}-${index}`} className="text-[9px] bg-orange-50 ...">
-    {m.kullanim_adedi}x {m.malzeme_adi}
-  </div>
-))}
-                      </td>
+
+            {/* Tablo Konteynırı */}
+            <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden mb-10">
+              <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
+                <h3 className="text-xs font-black uppercase italic text-gray-400 tracking-widest">📋 Rapor Detay Listesi</h3>
+                <button onClick={excelIndir} className="bg-green-600 text-white px-6 py-2.5 rounded-full hover:bg-green-700 text-[10px] font-black shadow-lg flex items-center gap-2 uppercase italic transition-transform active:scale-95">
+                  📥 Excel'e Aktar
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="text-[10px] font-black uppercase text-gray-400 border-b bg-gray-50/50">
+                      <th className="p-5">İş Emri</th>
+                      <th className="p-5">Personel</th>
+                      <th className="p-5">İş Özeti</th>
+                      <th className="p-5">Malzemeler</th>
                     </tr>
-                  ))}
-                  {filtrelenmisVeri.length === 0 && (
-                    <tr><td colSpan={5} className="p-10 text-center text-gray-400 italic font-medium">Aradığınız kriterlere uygun kayıt bulunamadı.</td></tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filtrelenmisVeri.map(ihbar => (
+                      <tr key={ihbar.id} className="hover:bg-blue-50/30 transition-colors group">
+                        <td className="p-5">
+                          <div className="text-blue-600 font-black text-sm italic tracking-tighter">#{ihbar.ifs_is_emri_no}</div>
+                          <div className="text-[9px] text-gray-400 font-bold">{new Date(ihbar.kapatma_tarihi).toLocaleDateString('tr-TR')}</div>
+                        </td>
+                        <td className="p-5 whitespace-nowrap">
+                          <div className="font-black text-xs uppercase text-gray-700 flex items-center gap-2">
+                             <div className="w-7 h-7 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px] border-2 border-white shadow-sm">{ihbar.profiles?.full_name?.charAt(0)}</div>
+                             {ihbar.profiles?.full_name}
+                          </div>
+                        </td>
+                        <td className="p-5 max-w-xs">
+                          <div className="bg-gray-100 text-gray-800 text-[9px] px-2 py-0.5 rounded w-fit font-black mb-1 uppercase italic tracking-tighter">{ihbar.konu}</div>
+                          <div className="text-[11px] text-gray-500 italic leading-tight line-clamp-2">"{ihbar.aciklama}"</div>
+                        </td>
+                        <td className="p-5">
+                          <div className="flex flex-wrap gap-1">
+                            {ihbar.ihbar_malzemeleri && ihbar.ihbar_malzemeleri.length > 0 ? (
+                              ihbar.ihbar_malzemeleri.map((m: any, idx: number) => (
+                                <span key={`${m.id}-${idx}`} className="text-[8px] font-black bg-orange-100 text-orange-700 px-2 py-1 rounded-md uppercase border border-orange-200">
+                                  {m.kullanim_adedi}x {m.malzeme_adi}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[8px] text-gray-300 italic font-bold">Malzeme Kullanılmadı</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

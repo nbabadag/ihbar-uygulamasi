@@ -35,16 +35,21 @@ export default function DashboardPage() {
       calisma_gruplari (grup_adi)
     `)
     
+    // --- GÜNCELLENEN KISITLAMA MANTIĞI ---
     if (role === 'Saha Personeli') {
+      // SAHA PERSONELİ: Sadece bizzat kendi üzerine atanmış işleri görür (Havuzu/Boştakileri göremez)
+      query = query.eq('atanan_personel', id)
+    } 
+    else if (role === 'Formen') {
+      // FORMEN: Boştaki işleri + Kendi grubundaki işleri + Kendi üzerindeki işleri görür
       const { data: userGroups } = await supabase.from('grup_uyeleri').select('grup_id').eq('profil_id', id)
       const groupIds = userGroups?.map(g => g.grup_id) || []
-      if (groupIds.length > 0) {
-        query = query.or(`atanan_personel.eq.${id},atanan_grup_id.in.(${groupIds.join(',')})`)
-      } else {
-        query = query.eq('atanan_personel', id)
-      }
+      
+      const groupFilter = groupIds.length > 0 ? `,atanan_grup_id.in.(${groupIds.join(',')})` : ''
+      query = query.or(`atanan_personel.is.null,atanan_personel.eq.${id}${groupFilter}`)
     }
-    
+    // Çağrı Merkezi, Admin vb. tüm işleri görmeye devam eder.
+
     const { data: ihbarData, error } = await query.order('created_at', { ascending: false })
     
     if (ihbarData) {
@@ -100,6 +105,7 @@ export default function DashboardPage() {
   const JobCard = ({ ihbar }: { ihbar: any }) => {
     const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
     const isDelayed = ihbar.durum === 'Beklemede' && diff >= 30
+    const isUnassigned = !ihbar.atanan_personel && !ihbar.atanan_grup_id;
 
     return (
       <div 
@@ -107,6 +113,8 @@ export default function DashboardPage() {
         className={`p-4 rounded-2xl shadow-sm border mb-3 cursor-pointer transition-all group ${
           isDelayed 
           ? 'bg-red-600 border-red-400 animate-pulse text-white' 
+          : isUnassigned && userRole === 'Formen'
+          ? 'bg-blue-50 border-blue-200 border-dashed text-black hover:bg-blue-100'
           : 'bg-white border-gray-100 text-black hover:shadow-md hover:border-blue-400'
         }`}
       >
@@ -128,8 +136,10 @@ export default function DashboardPage() {
           <div className="flex items-center gap-1">
             {ihbar.atanan_grup_id ? (
               <span className={`text-[8px] font-black px-2 py-1 rounded-lg border ${isDelayed ? 'bg-red-700 border-red-400 text-white' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>👥 {ihbar.calisma_gruplari?.grup_adi}</span>
-            ) : (
+            ) : ihbar.atanan_personel ? (
               <span className={`text-[8px] font-black px-2 py-1 rounded-lg border ${isDelayed ? 'bg-red-700 border-red-400 text-white' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>👤 {ihbar.profiles?.full_name?.split(' ')[0] || 'Atanmadı'}</span>
+            ) : (
+              <span className="text-[8px] font-black px-2 py-1 rounded-lg border bg-gray-100 text-gray-400 border-gray-200 italic">⏳ HAVUZDA / ATANMAMIŞ</span>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -145,7 +155,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-black font-sans">
       
-      {/* MOBIL HEADER (Sadece mobilde görünür) */}
+      {/* MOBIL HEADER */}
       <div className="md:hidden bg-blue-900 text-white p-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
         <h2 className="text-lg font-black italic tracking-tighter">SAHA 360</h2>
         <div className="flex items-center gap-3">
@@ -157,7 +167,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* SOL MENÜ (Masaüstü) */}
+      {/* SOL MENÜ */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360 Paneli</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm">
@@ -182,15 +192,14 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ANA İÇERİK - 3 SÜTUNLU KANBAN (MOBİLDE ALT ALTA) */}
+      {/* ANA İÇERİK */}
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold">
-        {/* MOBİL İÇİN HIZLI MENÜ (Opsiyonel) */}
+        {/* MOBİL HIZLI MENÜ */}
         <div className="flex md:hidden gap-2 overflow-x-auto pb-4 mb-2 no-scrollbar font-black text-[10px] uppercase">
              {canCreateJob && <button onClick={() => router.push('/dashboard/yeni-ihbar')} className="bg-sky-600 text-white px-4 py-2 rounded-full whitespace-nowrap">📢 İhbar Aç</button>}
              <button onClick={() => router.push('/dashboard/izleme-ekrani')} className="bg-red-600 text-white px-4 py-2 rounded-full whitespace-nowrap">📺 TV Panel</button>
         </div>
 
-        {/* KANBAN GRID: Mobilde 1 kolon, Büyük ekranlarda 3 kolon */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-60px)]">
           
           {/* AÇIK İHBARLAR */}
@@ -237,10 +246,9 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
-
         </div>
       </div>
-
+      
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
