@@ -70,36 +70,18 @@ export default function IhbarDetay() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // --- YARDIMCI PERSONEL EKLEME (GÜNCELLENDİ) ---
   const yardimciEkle = async () => {
     if (!seciliYardimci) return;
-    
-    // Mevcut yardımcıları al, eğer null ise boş dizi başlat
     const mevcutYardimcilar = Array.isArray(ihbar.yardimcilar) ? ihbar.yardimcilar : [];
-    
-    // Eğer aynı kişi zaten ekliyse ekleme
     if (mevcutYardimcilar.includes(seciliYardimci)) {
       alert("Bu personel zaten ekipte!");
       return;
     }
-
     const yeniYardimcilar = [...mevcutYardimcilar, seciliYardimci];
-
-    const { error } = await supabase
-      .from('ihbarlar')
-      .update({ yardimcilar: yeniYardimcilar })
-      .eq('id', id);
-
-    if (error) {
-      alert("Hata: Sütun bulunamadı veya yetki yok! Lütfen SQL komutunu çalıştırdığınızdan emin olun.");
-      console.error(error);
-    } else {
-      setSeciliYardimci(''); 
-      fetchData(); 
-    }
+    const { error } = await supabase.from('ihbarlar').update({ yardimcilar: yeniYardimcilar }).eq('id', id);
+    if (!error) { setSeciliYardimci(''); fetchData(); }
   };
 
-  // YARDIMCI PERSONEL SİLME
   const yardimciSil = async (isim: string) => {
     const yeniYardimcilar = ihbar.yardimcilar.filter((y: string) => y !== isim);
     const { error } = await supabase.from('ihbarlar').update({ yardimcilar: yeniYardimcilar }).eq('id', id);
@@ -114,7 +96,6 @@ export default function IhbarDetay() {
       ifs_is_emri_no: ifsNo,
       durum: ihbar.durum === 'Beklemede' ? 'Islemde' : ihbar.durum
     }).eq('id', id)
-    
     if (!error) { alert("Görevlendirme Güncellendi!"); fetchData(); }
     setLoading(false)
   }
@@ -127,7 +108,6 @@ export default function IhbarDetay() {
       durum: 'Calisiliyor',
       kabul_tarihi: new Date().toISOString()
     }).eq('id', id)
-
     if (!error) { alert("İş üzerinize alındı ve başlatıldı!"); fetchData(); }
     setLoading(false)
   }
@@ -139,8 +119,7 @@ export default function IhbarDetay() {
       kabul_tarihi: new Date().toISOString(),
       atanan_personel: userId 
     }).eq('id', id)
-    
-    if (!error) { alert("İş Başlatıldı!"); fetchData(); }
+    if (!error) { alert("İş Başlatıldı/Devam Ediliyor!"); fetchData(); }
     setLoading(false)
   }
 
@@ -152,6 +131,19 @@ export default function IhbarDetay() {
     if (!error) { setMiktar(0); setSecilenMalzeme(null); setSearchTerm(''); fetchData(); }
   }
 
+  // --- YENİ: İŞİ DURAKLATMA (MALZEME BEKLEME) ---
+  const isiDuraklat = async () => {
+    if (!personelNotu) return alert("Lütfen neden durdurulduğunu (eksik malzemeyi vb.) not kısmına yazın.");
+    setLoading(true);
+    const { error } = await supabase.from('ihbarlar').update({ 
+      durum: 'Durduruldu', 
+      personel_notu: personelNotu 
+    }).eq('id', id);
+
+    if (!error) { alert("İş 'Durduruldu' olarak işaretlendi. Malzeme bekleniyor."); fetchData(); }
+    setLoading(false);
+  }
+
   const isiTamamla = async () => {
     if (!personelNotu) return alert("Lütfen yapılan işlemi açıklayın.");
     setLoading(true);
@@ -161,7 +153,6 @@ export default function IhbarDetay() {
       bitis_saati: bitisSaati,
       personel_notu: personelNotu 
     }).eq('id', id);
-
     if (!error) { alert("İş Kapatıldı!"); router.push('/dashboard'); }
     setLoading(false);
   }
@@ -171,8 +162,6 @@ export default function IhbarDetay() {
   return (
     <div className="p-4 md:p-10 bg-gray-50 min-h-screen text-black font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
-        
-        {/* ÜST BAR */}
         <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <button onClick={() => router.push('/dashboard')} className="text-blue-900 font-black text-xs uppercase italic flex items-center gap-2">← Dashboard'a Dön</button>
           <div className="flex gap-2 text-[10px] font-bold text-gray-400 uppercase italic tracking-widest">
@@ -181,15 +170,14 @@ export default function IhbarDetay() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* SOL TARAF: İŞ BİLGİLERİ */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-b-8 border-blue-900 relative overflow-hidden">
               <div className="absolute top-0 right-0 p-6">
                 <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 ${
                   ihbar.durum === 'Tamamlandi' ? 'bg-green-50 text-green-700 border-green-200' : 
-                  ihbar.durum === 'Calisiliyor' ? 'bg-blue-600 text-white border-blue-700 animate-pulse' : 'bg-orange-50 text-orange-700 border-orange-200'
-                }`}>{ihbar.durum}</span>
+                  ihbar.durum === 'Calisiliyor' ? 'bg-blue-600 text-white border-blue-700 animate-pulse' : 
+                  ihbar.durum === 'Durduruldu' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-orange-50 text-orange-700 border-orange-200'
+                }`}>{ihbar.durum === 'Durduruldu' ? '⚠️ DURDURULDU' : ihbar.durum}</span>
               </div>
 
               {editMode ? (
@@ -215,7 +203,6 @@ export default function IhbarDetay() {
                 </>
               )}
 
-              {/* EKİP ARKADAŞLARI GÖRÜNÜMÜ */}
               {ihbar.yardimcilar && ihbar.yardimcilar.length > 0 && (
                 <div className="mb-6 p-4 bg-blue-50/50 rounded-3xl border border-blue-100">
                   <p className="text-[9px] font-black text-blue-400 uppercase mb-2 italic tracking-widest">👥 Sahadaki Ekip Arkadaşları</p>
@@ -223,7 +210,7 @@ export default function IhbarDetay() {
                     {ihbar.yardimcilar.map((y: string, idx: number) => (
                       <span key={idx} className="bg-white text-blue-700 px-3 py-1.5 rounded-xl text-[10px] font-black border border-blue-200 flex items-center gap-2 shadow-sm">
                         👤 {y}
-                        {ihbar.durum === 'Calisiliyor' && (
+                        {(ihbar.durum === 'Calisiliyor' || ihbar.durum === 'Durduruldu') && (
                           <button onClick={() => yardimciSil(y)} className="text-red-500 font-black hover:scale-125 transition-transform ml-1">×</button>
                         )}
                       </span>
@@ -232,7 +219,6 @@ export default function IhbarDetay() {
                 </div>
               )}
 
-              {/* MALZEME TABLOSU */}
               <div className="mt-6 border-t pt-6">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="font-black text-xs text-gray-400 uppercase tracking-widest">📦 Kullanılan Malzemeler</h3>
@@ -260,7 +246,6 @@ export default function IhbarDetay() {
             </div>
           </div>
 
-          {/* SAĞ TARAF: YÖNETİM & İŞLEM PANELİ */}
           <div className="space-y-6">
             {canEditAssignment && (
               <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-t-8 border-orange-500">
@@ -289,12 +274,13 @@ export default function IhbarDetay() {
             <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-2 border-blue-600 sticky top-6">
               <h3 className="font-black text-xl mb-6 text-blue-900 italic uppercase tracking-tighter">Saha İşlemleri</h3>
               
+              {/* --- GÜNCELLENEN BUTON MANTIĞI --- */}
               {ihbar.durum === 'Islemde' || ihbar.durum === 'Beklemede' ? (
                 <button onClick={isiBaslat} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-3xl font-black shadow-xl animate-pulse uppercase italic text-sm">🛠️ İŞİ ŞİMDİ BAŞLAT</button>
+              ) : ihbar.durum === 'Durduruldu' ? (
+                <button onClick={isiBaslat} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-6 rounded-3xl font-black shadow-xl animate-bounce uppercase italic text-sm">🔧 MALZEME GELDİ / DEVAM ET</button>
               ) : ihbar.durum === 'Calisiliyor' ? (
                 <div className="space-y-4">
-                  
-                  {/* YARDIMCI EKLEME PANELİ */}
                   <div className="p-4 bg-blue-50 rounded-3xl border-2 border-dashed border-blue-200">
                     <p className="text-[10px] font-black text-blue-600 uppercase mb-3 italic">🤝 Ekip Arkadaşı Ekle</p>
                     <div className="flex gap-2">
@@ -331,11 +317,16 @@ export default function IhbarDetay() {
                   )}
 
                   <div className="space-y-2">
-                    <p className="text-[9px] font-black text-gray-400 uppercase italic">Yapılan İşlem Özeti (Zorunlu)</p>
-                    <textarea className="w-full p-4 border rounded-2xl bg-gray-50 text-xs font-bold" placeholder="Örn: Arıza giderildi, parça değişti..." rows={3} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
+                    <p className="text-[9px] font-black text-gray-400 uppercase italic">Yapılan İşlem / Durdurma Notu</p>
+                    <textarea className="w-full p-4 border rounded-2xl bg-gray-50 text-xs font-bold" placeholder="Eğer işi durduracaksanız eksik malzemeyi buraya yazın..." rows={3} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
                   </div>
                   
-                  <button onClick={isiTamamla} className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-3xl font-black shadow-xl uppercase italic text-sm border-b-4 border-green-800">🏁 İŞİ TAMAMLA VE KAPAT</button>
+                  {/* --- DURDURMA VE TAMAMLAMA BUTONLARI --- */}
+                  <div className="grid grid-cols-1 gap-3">
+                    <button onClick={isiTamamla} className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-3xl font-black shadow-xl uppercase italic text-sm border-b-4 border-green-800">🏁 İŞİ TAMAMLA VE KAPAT</button>
+                    <button onClick={isiDuraklat} className="w-full bg-orange-500 hover:bg-orange-600 text-white py-4 rounded-3xl font-black shadow-lg uppercase italic text-[11px] border-b-4 border-orange-700 transition-all active:scale-95">⚠️ MALZEME BEKLİYOR / DURDUR</button>
+                  </div>
+
                 </div>
               ) : (
                 <div className="text-center p-12 bg-gray-50 rounded-[2.5rem] border-4 border-dashed border-gray-100">
