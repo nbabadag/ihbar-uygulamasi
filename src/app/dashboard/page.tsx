@@ -11,9 +11,8 @@ export default function DashboardPage() {
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
 
-  // Veri çekme fonksiyonu: profiles tablosuyla güvenli ilişki kurar
   const fetchData = useCallback(async (role: string, id: string) => {
-    // profiles!atanan_personel ünlem işareti, kurduğunuz Foreign Key ilişkisini doğrular
+    // İlişki hatasını önlemek için ünlem (!) ile Foreign Key zorlaması yapıyoruz
     let query = supabase.from('ihbarlar').select(`
       *,
       profiles!atanan_personel (
@@ -29,7 +28,7 @@ export default function DashboardPage() {
     
     if (error) {
       console.error("Veri çekme hatası:", error.message)
-      // İlişki hatası durumunda kayıtların kaybolmaması için yedek (fallback) sorgu
+      // Hata durumunda kayıtların kaybolmaması için düz veri çekiyoruz
       const { data: fallbackData } = await supabase.from('ihbarlar').select('*').order('created_at', { ascending: false })
       if (fallbackData) setIhbarlar(fallbackData)
       return
@@ -39,7 +38,6 @@ export default function DashboardPage() {
       setIhbarlar(ihbarData)
       setStats({
         bekleyen: ihbarData.filter(i => i.durum === 'Beklemede').length,
-        // Islemde ve Calisiliyor durumlarını tek kalemde topluyoruz
         islemde: ihbarData.filter(i => i.durum === 'Islemde' || i.durum === 'Calisiliyor').length,
         tamamlanan: ihbarData.filter(i => i.durum === 'Tamamlandi').length
       })
@@ -65,8 +63,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!userId || !userRole) return
 
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.permission !== "denied" && Notification.requestPermission()
+    // Vercel Build Hatası Çözümü: Notification kontrolünü güvenli hale getirdik
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission()
+      }
     }
 
     const playAlert = () => {
@@ -85,7 +86,8 @@ export default function DashboardPage() {
           if (isTargeted || userRole === 'Admin') {
             if (payload.old && payload.old.durum === 'Beklemede' && payload.new.durum === 'Islemde') {
               playAlert()
-              if (Notification.permission === "granted") {
+              // Tarayıcı bildirim izni kontrolü
+              if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
                 new Notification("🔔 YENİ İŞ EMRİ!", {
                   body: `${payload.new.musteri_adi} işi size atandı.`,
                 })
@@ -109,11 +111,10 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex text-black">
-      {/* Sol Menü (Sidebar) */}
       <div className="w-64 bg-blue-900 text-white p-6 shadow-xl flex flex-col fixed h-full">
         <h2 className="text-xl font-bold mb-8 italic underline decoration-blue-400 tracking-wider uppercase">İhbar Paneli</h2>
         <nav className="space-y-4 flex-1">
-          <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-lg cursor-pointer shadow-md flex items-center gap-2 hover:bg-blue-700 transition font-bold text-sm">🏠 Ana Sayfa</div>
+          <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-lg cursor-pointer shadow-md flex items-center gap-2 hover:bg-blue-700 transition font-bold text-sm text-white">🏠 Ana Sayfa</div>
           
           {userRole === 'Admin' && (
             <>
@@ -122,7 +123,6 @@ export default function DashboardPage() {
               <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 bg-green-800/50 text-sm font-black text-white">📊 Raporlama</div>
             </>
           )}
-          {/* Malzeme Stok kaldırıldı */}
         </nav>
         
         <div className="mt-auto">
@@ -141,23 +141,21 @@ export default function DashboardPage() {
           }`}>{userRole}</div>
         </header>
 
-        {/* İstatistik Kartları */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-blue-500">
+          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-blue-500 text-blue-600">
             <h3 className="text-gray-400 text-[10px] font-black uppercase mb-1">Bekleyen İhbarlar</h3>
-            <p className="text-5xl font-black text-blue-600">{stats.bekleyen}</p>
+            <p className="text-5xl font-black">{stats.bekleyen}</p>
           </div>
-          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-orange-500">
+          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-orange-500 text-orange-500">
             <h3 className="text-gray-400 text-[10px] font-black uppercase mb-1 tracking-tighter">{userRole === 'Admin' ? 'İşlemde Olanlar' : 'Üzerimdeki İşler'}</h3>
-            <p className="text-5xl font-black text-orange-500">{stats.islemde}</p>
+            <p className="text-5xl font-black">{stats.islemde}</p>
           </div>
-          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-green-500">
+          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-green-500 text-green-500">
             <h3 className="text-gray-400 text-[10px] font-black uppercase mb-1">Tamamlananlar</h3>
-            <p className="text-5xl font-black text-green-500">{stats.tamamlanan}</p>
+            <p className="text-5xl font-black">{stats.tamamlanan}</p>
           </div>
         </div>
 
-        {/* İş Emirleri Tablosu */}
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
           <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
             <h2 className="text-xl font-bold text-gray-800">{userRole === 'Admin' ? 'Güncel İş Emirleri' : 'Bana Atanan Görevler'}</h2>
@@ -218,7 +216,7 @@ export default function DashboardPage() {
                         </div>
                       ) : (
                         <span className="text-gray-300 text-[10px] italic font-medium text-orange-400 font-bold uppercase">
-                          {ihbar.durum === 'Calisiliyor' ? '👷 Çalışma Başladı' : 'Devam Ediyor...'}
+                          {ihbar.durum === 'Calisiliyor' ? '👷 Çalışma Başladı' : 'Devam Ediyor'}
                         </span>
                       )}
                     </td>
