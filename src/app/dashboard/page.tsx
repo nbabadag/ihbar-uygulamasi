@@ -13,10 +13,22 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
 
-  const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis', 'Yönetici', 'Müdür', 'Admin'].includes(userRole || '')
-  const canManageUsers = ['Mühendis', 'Yönetici', 'Müdür', 'Admin'].includes(userRole || '')
-  const canSeeReports = ['Formen', 'Mühendis', 'Yönetici', 'Müdür', 'Admin'].includes(userRole || '')
-  const canManageMaterials = userRole !== 'Saha Personeli'
+  // --- YETKİ KONTROLLERİ ---
+  const normalizedRole = userRole?.trim().toLowerCase() || '';
+  
+  // Saha/Teknik personel kısıtlaması (Formen hariç)
+  const isRestricted = normalizedRole.includes('personel') || 
+                       normalizedRole.includes('saha') || 
+                       normalizedRole.includes('teknik') || 
+                       normalizedRole.includes('usta');
+
+  const canCreateJob = ['çağrı merkezi', 'formen', 'mühendis', 'yönetici', 'müdür', 'admin'].includes(normalizedRole);
+  const canManageUsers = ['mühendis', 'yönetici', 'müdür', 'admin'].includes(normalizedRole);
+  const canSeeReports = ['formen', 'mühendis', 'yönetici', 'müdür', 'admin'].includes(normalizedRole);
+  const canManageMaterials = !isRestricted || normalizedRole === 'formen';
+  
+  // TV İzleme Paneli Yetkisi: Kısıtlı olmayanlar veya Formenler görebilir
+  const canSeeTV = !isRestricted || normalizedRole === 'formen';
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000)
@@ -29,8 +41,8 @@ export default function DashboardPage() {
   }, [])
 
   const fetchData = useCallback(async (role: string, id: string) => {
-    // Rol ismindeki boşlukları temizleyip küçük harfe çevirerek hata payını sıfırlıyoruz
-    const normalizedRole = role.trim().toLowerCase();
+    if (!role || !id) return;
+    const nRole = role.trim().toLowerCase();
 
     let query = supabase.from('ihbarlar').select(`
       *,
@@ -38,20 +50,18 @@ export default function DashboardPage() {
       calisma_gruplari (grup_adi)
     `)
     
-    // --- KESİN KISITLAMA MANTIĞI ---
-    if (normalizedRole === 'saha personeli') {
-      // SAHA PERSONELİ: Havuzu, grupları veya başkasının işini ASLA göremez.
-      // Sadece bizzat kendi ID'si ile eşleşen (atanmış veya tamamlamış) işleri görür.
+    // Saha personeli için katı filtre
+    const isFieldWorker = nRole.includes('personel') || nRole.includes('saha') || nRole.includes('teknik') || nRole.includes('usta');
+
+    if (isFieldWorker && nRole !== 'formen' && nRole !== 'admin') {
       query = query.eq('atanan_personel', id)
     } 
-    else if (normalizedRole === 'formen') {
-      // FORMEN: Boştaki işler + Grubundakiler + Kendi üzerindekiler
+    else if (nRole === 'formen') {
       const { data: userGroups } = await supabase.from('grup_uyeleri').select('grup_id').eq('profil_id', id)
       const groupIds = userGroups?.map(g => g.grup_id) || []
       const groupFilter = groupIds.length > 0 ? `,atanan_grup_id.in.(${groupIds.join(',')})` : ''
       query = query.or(`atanan_personel.is.null,atanan_personel.eq.${id}${groupFilter}`)
     }
-    // Admin, Müdür ve Çağrı Merkezi filtreye takılmadan her şeyi görmeye devam eder.
 
     const { data: ihbarData, error } = await query.order('created_at', { ascending: false })
     
@@ -78,13 +88,9 @@ export default function DashboardPage() {
       if (user) {
         setUserId(user.id)
         const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
-        
-        // Veritabanındaki rolü çek, yoksa 'Saha Personeli' ata
         const role = profile?.role || 'Saha Personeli'
         setUserName(profile?.full_name || 'Kullanıcı')
         setUserRole(role)
-        
-        // Veriyi çekmeye gönder
         fetchData(role, user.id)
       } else {
         router.push('/')
@@ -146,11 +152,10 @@ export default function DashboardPage() {
             ) : ihbar.atanan_personel ? (
               <span className={`text-[8px] font-black px-2 py-1 rounded-lg border ${isDelayed ? 'bg-red-700 border-red-400 text-white' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>👤 {ihbar.profiles?.full_name?.split(' ')[0] || 'Atanmadı'}</span>
             ) : (
-              <span className="text-[8px] font-black px-2 py-1 rounded-lg border bg-gray-100 text-gray-400 border-gray-200 italic">⏳ HAVUZDA / ATANMAMIŞ</span>
+              <span className="text-[8px] font-black px-2 py-1 rounded-lg border bg-gray-100 text-gray-400 border-gray-200 italic">⏳ HAVUZDA</span>
             )}
           </div>
           <div className="flex items-center gap-2">
-            {isDelayed && <span className="text-[8px] font-black bg-white text-red-600 px-2 py-0.5 rounded animate-bounce">GECİKME!</span>}
             <span className={`text-[9px] font-bold ${isDelayed ? 'text-white' : 'text-gray-400'}`}>⏱️ {Math.floor(diff)} dk</span>
             {ihbar.durum === 'Calisiliyor' && <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>}
           </div>
@@ -162,18 +167,6 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-black font-sans">
       
-      {/* MOBIL HEADER */}
-      <div className="md:hidden bg-blue-900 text-white p-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
-        <h2 className="text-lg font-black italic tracking-tighter">SAHA 360</h2>
-        <div className="flex items-center gap-3">
-           <div className="text-right flex flex-col">
-              <span className="text-[10px] font-bold leading-none">{userName}</span>
-              <span className="text-[8px] text-blue-300 uppercase leading-none">{userRole}</span>
-           </div>
-           <button onClick={handleLogout} className="bg-red-600 p-2 rounded-lg text-xs">🚪</button>
-        </div>
-      </div>
-
       {/* SOL MENÜ */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360 Paneli</h2>
@@ -184,7 +177,11 @@ export default function DashboardPage() {
           {canManageUsers && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 bg-orange-600 rounded-xl cursor-pointer flex items-center gap-2 hover:bg-orange-500 transition border-l-4 border-orange-300">👥 Çalışma Grupları</div>}
           {canManageMaterials && <div onClick={() => router.push('/dashboard/malzeme-yonetimi')} className="p-3 bg-purple-600 rounded-xl cursor-pointer flex items-center gap-2 hover:bg-purple-500 transition border-l-4 border-purple-300">⚙️ Malzeme Kataloğu</div>}
           {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 bg-teal-700 rounded-xl cursor-pointer flex items-center gap-2 hover:bg-teal-600 transition border-l-4 border-teal-300">📊 Raporlama</div>}
-          <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer flex items-center gap-2 hover:bg-red-500 transition border-l-4 border-red-300 animate-pulse">📺 TV İzleme Paneli</div>
+          
+          {/* TV IZLEME PANELİ YETKİ KONTROLÜ */}
+          {canSeeTV && (
+            <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer flex items-center gap-2 hover:bg-red-500 transition border-l-4 border-red-300 animate-pulse">📺 TV İzleme Paneli</div>
+          )}
         </nav>
 
         <div className="mt-auto border-t border-blue-800 pt-4 space-y-4">
@@ -199,16 +196,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ANA İÇERİK */}
+      {/* ANA İÇERİK - 3 SÜTUNLU KANBAN */}
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold">
-        {/* MOBİL HIZLI MENÜ */}
-        <div className="flex md:hidden gap-2 overflow-x-auto pb-4 mb-2 no-scrollbar font-black text-[10px] uppercase">
-             {canCreateJob && <button onClick={() => router.push('/dashboard/yeni-ihbar')} className="bg-sky-600 text-white px-4 py-2 rounded-full whitespace-nowrap">📢 İhbar Aç</button>}
-             <button onClick={() => router.push('/dashboard/izleme-ekrani')} className="bg-red-600 text-white px-4 py-2 rounded-full whitespace-nowrap">📺 TV Panel</button>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-60px)]">
-          
           {/* AÇIK İHBARLAR */}
           <div className="flex flex-col bg-yellow-50/40 rounded-[2rem] md:rounded-[2.5rem] border-2 border-yellow-100 shadow-sm overflow-hidden text-black h-[500px] lg:h-full">
             <div className="p-4 md:p-5 bg-yellow-400 text-yellow-900 flex justify-between items-center shadow-md">
