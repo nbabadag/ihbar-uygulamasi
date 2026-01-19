@@ -104,26 +104,26 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-black">
       
-      {/* SOL MENÜ - Mobilde gizlenir (hidden), Masaüstünde görünür (md:flex) */}
+      {/* SOL MENÜ - Masaüstü Görünümü */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
         <h2 className="text-xl font-bold mb-8 italic underline decoration-blue-400 tracking-wider uppercase">İhbar Paneli</h2>
         <nav className="space-y-4 flex-1">
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-lg cursor-pointer flex items-center gap-2 hover:bg-blue-700 transition font-bold text-sm">🏠 Ana Sayfa</div>
           {userRole === 'Admin' && (
             <>
-              <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-black">📢 İhbar Kayıt</div>
-              <div onClick={() => router.push('/dashboard/malzeme-yonetimi')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-black">⚙️ Malzeme Kataloğu</div>
-              <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 bg-green-800/50 text-sm font-black">📊 Raporlama</div>
+              <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-black text-white">📢 İhbar Kayıt</div>
+              <div onClick={() => router.push('/dashboard/malzeme-yonetimi')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-black text-white">⚙️ Malzeme Kataloğu</div>
+              <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 bg-green-800/50 text-sm font-black text-white">📊 Raporlama</div>
             </>
           )}
         </nav>
         <button onClick={handleLogout} className="w-full bg-red-600 p-3 rounded-lg hover:bg-red-700 transition font-bold shadow-lg text-sm">Çıkış Yap</button>
       </div>
 
-      {/* ANA İÇERİK ALANI - Mobilde tam genişlik, Masaüstünde menü boşluğu kadar sağda (md:ml-64) */}
+      {/* ANA İÇERİK ALANI */}
       <div className="flex-1 p-4 md:p-10 ml-0 md:ml-64 font-bold">
         
-        {/* MOBİL ÜST BAR - Sadece telefonlarda görünür */}
+        {/* MOBİL ÜST BAR */}
         <div className="md:hidden flex justify-between items-center mb-6 bg-blue-900 p-4 rounded-2xl text-white shadow-xl border-b-4 border-blue-700">
           <div className="flex flex-col">
             <span className="text-[10px] font-black uppercase text-blue-300">Saha Sistemi</span>
@@ -132,6 +132,26 @@ export default function DashboardPage() {
           <button onClick={handleLogout} className="bg-red-500 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95">Çıkış</button>
         </div>
 
+        {/* --- MOBİL HIZLI ERİŞİM BUTONLARI (Sadece Admin Görür) --- */}
+        {userRole === 'Admin' && (
+          <div className="md:hidden grid grid-cols-2 gap-3 mb-6">
+            <button 
+              onClick={() => router.push('/dashboard/yeni-ihbar')}
+              className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg shadow-blue-200 flex flex-col items-center justify-center gap-2 active:scale-95 transition-all"
+            >
+              <span className="text-2xl">📢</span>
+              <span className="text-[11px] font-black uppercase tracking-tight">İhbar Kaydı</span>
+            </button>
+            <button 
+              onClick={() => router.push('/dashboard/raporlar')}
+              className="bg-green-600 text-white p-4 rounded-2xl shadow-lg shadow-green-200 flex flex-col items-center justify-center gap-2 active:scale-95 transition-all"
+            >
+              <span className="text-2xl">📊</span>
+              <span className="text-[11px] font-black uppercase tracking-tight">Raporlar</span>
+            </button>
+          </div>
+        )}
+
         <header className="hidden md:flex justify-between items-center mb-10 border-b border-gray-200 pb-5">
           <h1 className="text-3xl font-bold text-gray-800">{userRole === 'Admin' ? 'Yönetim Paneli' : 'Görev Listem'}</h1>
           <div className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
@@ -139,7 +159,7 @@ export default function DashboardPage() {
           }`}>{userRole}</div>
         </header>
 
-        {/* İSTATİSTİKLER - Mobilde tek sütun, tablet/masaüstünde yan yana */}
+        {/* İSTATİSTİKLER */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-10">
           <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-blue-500 text-blue-600">
             <h3 className="text-gray-400 text-[10px] font-black uppercase mb-1">Bekleyen</h3>
@@ -155,7 +175,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* İŞ EMİRLERİ TABLOSU - Mobilde kaydırılabilir */}
+        {/* İŞ EMİRLERİ TABLOSU */}
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
           <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
             <h2 className="text-lg md:text-xl font-bold text-gray-800">Güncel İşler</h2>
@@ -175,7 +195,7 @@ export default function DashboardPage() {
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {ihbarlar.map((ihbar) => (
-                  <tr key={ihbar.id} onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className="active:bg-blue-50 md:hover:bg-blue-50 transition cursor-pointer group">
+                  <tr key={ihbar.id} onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className="active:bg-blue-50 md:hover:bg-blue-50 transition cursor-pointer">
                     <td className="px-6 py-4">
                       <div className="font-bold text-gray-800 text-sm">{ihbar.musteri_adi}</div>
                       <div className="text-[10px] text-gray-500 font-medium">{ihbar.konu}</div>
