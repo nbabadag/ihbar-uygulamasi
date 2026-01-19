@@ -21,7 +21,7 @@ export default function KullaniciYonetimiPage() {
   const fetchUsers = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase
-      .from('personel_listesi') // SQL'de oluşturduğumuz View
+      .from('personel_listesi') 
       .select('*')
       .order('full_name', { ascending: true })
     
@@ -34,13 +34,17 @@ export default function KullaniciYonetimiPage() {
   // YENİ KAYIT
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName, role: role } }
     })
     
-    if (authError) return alert("Hata: " + authError.message)
+    if (authError) {
+      setLoading(false)
+      return alert("Hata: " + authError.message)
+    }
     
     if (authData.user) {
       await supabase.from('profiles').insert([{ 
@@ -50,15 +54,19 @@ export default function KullaniciYonetimiPage() {
         phone_number: phone, 
         is_active: true 
       }])
-      alert("Personel eklendi.")
+      alert("Personel başarıyla eklendi.")
       setEmail(''); setPassword(''); setFullName(''); setPhone(''); 
       fetchUsers()
     }
+    setLoading(false)
   }
 
-  // GÜNCELLEME
+  // GÜNCELLEME (Şifre Yenileme Dahil)
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
+
+    // 1. Profil bilgilerini güncelle
     const { error: profileError } = await supabase
       .from('profiles')
       .update({ 
@@ -68,11 +76,32 @@ export default function KullaniciYonetimiPage() {
       })
       .eq('id', editingUser.id)
 
-    if (profileError) return alert(profileError.message)
+    if (profileError) {
+      setLoading(false)
+      return alert(profileError.message)
+    }
 
-    alert("Bilgiler güncellendi.")
+    // 2. Şifre Değiştirme (Eğer yeni şifre yazılmışsa)
+    if (editingUser.newPassword && editingUser.newPassword.length >= 6) {
+      // Not: Client-side üzerinden başka kullanıcının şifresini değiştirmek 
+      // Supabase'de kısıtlıdır. Eğer hata alırsan e-posta sıfırlama en güvenli yoldur.
+      const { error: passwordError } = await supabase.auth.admin.updateUserById(
+        editingUser.id,
+        { password: editingUser.newPassword }
+      )
+      
+      if (passwordError) {
+        alert("Profil güncellendi ancak şifre değişikliği için Supabase panelinden 'Service Role Key' yapılandırması gereklidir. Şifreyi Supabase panelinden manuel sıfırlayabilirsiniz.")
+      } else {
+        alert("Tüm bilgiler ve şifre başarıyla güncellendi.")
+      }
+    } else {
+      alert("Personel bilgileri güncellendi.")
+    }
+
     setEditingUser(null)
     fetchUsers()
+    setLoading(false)
   }
 
   const toggleStatus = async (id: string, currentStatus: boolean) => {
@@ -81,39 +110,41 @@ export default function KullaniciYonetimiPage() {
   }
 
   const handleDelete = async (id: string, name: string) => {
-    if (confirm(`${name} personeli silinecek?`)) {
+    if (confirm(`${name} personeli sistemden tamamen silinecek? Bu işlem geri alınamaz.`)) {
       await supabase.from('profiles').delete().eq('id', id)
+      // Auth tarafındaki kullanıcıyı silmek için Supabase Dashboard'u kullanman önerilir.
       fetchUsers()
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8 text-black">
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8 text-black font-sans">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-black text-blue-900 uppercase italic tracking-tighter text-shadow-sm">Personel Yönetimi</h1>
+          <h1 className="text-2xl font-black text-blue-900 uppercase italic tracking-tighter">Personel Yönetimi</h1>
           <button onClick={() => router.push('/dashboard')} className="group flex items-center gap-2 bg-white border-2 border-blue-900 text-blue-900 px-5 py-2 rounded-2xl font-black text-xs hover:bg-blue-900 hover:text-white transition-all shadow-sm">
-  <span className="text-lg group-hover:-translate-x-1 transition-transform">←</span> 
-  GERİ DÖN
-</button>
+            <span className="text-lg group-hover:-translate-x-1 transition-transform">←</span> GERİ DÖN
+          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* KAYIT FORMU */}
           <div className="lg:col-span-1 bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 h-fit">
-            <h2 className="font-black mb-4 text-blue-800 uppercase text-xs italic">Yeni Personel Tanımla</h2>
+            <h2 className="font-black mb-4 text-blue-800 uppercase text-[10px] italic tracking-widest">Yeni Personel Tanımla</h2>
             <form onSubmit={handleCreateUser} className="space-y-3">
               <input type="text" placeholder="Ad Soyad" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500" required />
               <input type="email" placeholder="E-Posta" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500" required />
               <input type="password" placeholder="Şifre" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500" required />
-              <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3 bg-blue-50 border-2 border-blue-100 rounded-2xl font-black italic text-xs uppercase">
+              <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3 bg-blue-50 border-2 border-blue-100 rounded-2xl font-black italic text-[11px] uppercase">
                 <option value="Saha Personeli">Saha Personeli</option>
                 <option value="Formen">Formen</option>
                 <option value="Çağrı Merkezi">Çağrı Merkezi</option>
                 <option value="Mühendis">Mühendis</option>
                 <option value="Yönetici">Yönetici</option>
               </select>
-              <button className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-blue-700 active:scale-95 transition-all italic">Sisteme Kaydet</button>
+              <button disabled={loading} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-blue-700 active:scale-95 transition-all italic">
+                {loading ? 'İŞLEM YAPILIYOR...' : 'SİSTEME KAYDET'}
+              </button>
             </form>
           </div>
 
@@ -153,31 +184,42 @@ export default function KullaniciYonetimiPage() {
                 ))}
               </tbody>
             </table>
-            {loading && <div className="p-10 text-center font-black text-gray-300 uppercase italic animate-pulse">Veriler yükleniyor...</div>}
+            {loading && !editingUser && <div className="p-10 text-center font-black text-gray-300 uppercase italic animate-pulse">Yükleniyor...</div>}
           </div>
         </div>
       </div>
 
       {/* DÜZENLEME MODALI */}
       {editingUser && (
-        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 text-black">
           <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border-4 border-white">
             <h2 className="text-xl font-black mb-6 uppercase italic text-blue-900 border-b-2 border-blue-50 pb-2">Personel Güncelle</h2>
             <form onSubmit={handleUpdateUser} className="space-y-4">
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">E-Posta (Değiştirilemez)</label>
+                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">E-Posta (Sabit)</label>
                 <input type="text" value={editingUser.email} disabled className="w-full p-3 bg-gray-100 border-2 rounded-2xl font-bold opacity-50 cursor-not-allowed" />
               </div>
               <div>
                 <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Ad Soyad</label>
                 <input type="text" value={editingUser.full_name} onChange={e => setEditingUser({...editingUser, full_name: e.target.value})} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-blue-500" />
               </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Telefon</label>
-                <input type="text" value={editingUser.phone_number || ''} onChange={e => setEditingUser({...editingUser, phone_number: e.target.value})} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-blue-500" />
+              
+              {/* ŞİFRE YENİLEME ALANI */}
+              <div className="bg-red-50 p-4 rounded-3xl border border-red-100">
+                <label className="text-[10px] font-black uppercase text-red-600 ml-2 italic">Yeni Şifre Tanımla</label>
+                <input 
+                  type="password" 
+                  placeholder="Değiştirmek istemiyorsanız boş bırakın" 
+                  onChange={e => setEditingUser({...editingUser, newPassword: e.target.value})} 
+                  className="w-full p-3 mt-1 bg-white border-2 border-red-200 rounded-xl font-bold outline-none focus:border-red-500 text-sm" 
+                />
+                <p className="text-[8px] text-red-400 mt-2 font-bold leading-tight uppercase px-2">
+                  * Şifre en az 6 karakter olmalıdır.
+                </p>
               </div>
+
               <div>
-                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Yetki</label>
+                <label className="text-[10px] font-black uppercase text-gray-400 ml-2 tracking-widest">Yetki Seviyesi</label>
                 <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} className="w-full p-3 bg-blue-50 border-2 border-blue-100 rounded-2xl font-black uppercase italic text-xs">
                   <option value="Saha Personeli">Saha Personeli</option>
                   <option value="Formen">Formen</option>
@@ -188,7 +230,9 @@ export default function KullaniciYonetimiPage() {
               </div>
               <div className="flex gap-3 pt-6">
                 <button type="button" onClick={() => setEditingUser(null)} className="flex-1 bg-gray-100 p-4 rounded-2xl font-black uppercase text-[10px]">İptal</button>
-                <button type="submit" className="flex-1 bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-blue-200">Değişiklikleri Kaydet</button>
+                <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] shadow-lg shadow-blue-200">
+                  {loading ? 'KAYDEDİLİYOR...' : 'GÜNCELLE'}
+                </button>
               </div>
             </form>
           </div>
