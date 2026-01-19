@@ -17,6 +17,14 @@ export default function DashboardPage() {
   const canSeeReports = ['Formen', 'Mühendis', 'Yönetici', 'Müdür', 'Admin'].includes(userRole || '')
   const canManageMaterials = userRole !== 'Saha Personeli'
 
+  // --- SESLİ UYARI FONKSİYONU ---
+  const playAlert = useCallback(() => {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
+    audio.play().catch(error => {
+      console.log("Ses çalma tarayıcı tarafından engellendi. Kullanıcı etkileşimi gerekiyor.", error)
+    })
+  }, [])
+
   const fetchData = useCallback(async (role: string, id: string) => {
     let query = supabase.from('ihbarlar').select(`
       *,
@@ -25,7 +33,6 @@ export default function DashboardPage() {
       )
     `)
     
-    // Saha Personeli sadece kendisine atananları, diğerleri her şeyi görür
     if (role === 'Saha Personeli') {
       query = query.eq('atanan_personel', id)
     }
@@ -64,17 +71,39 @@ export default function DashboardPage() {
     checkUserAndInitialFetch()
   }, [router, fetchData])
 
-  // Real-time ve Bildirimler (Mevcut yapı korundu)
+  // --- REAL-TIME & SESLİ BİLDİRİM TETİKLEYİCİ ---
   useEffect(() => {
     if (!userId || !userRole) return
+    
     const channel = supabase
       .channel('canli-is-takibi')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => {
-        fetchData(userRole, userId)
-      })
+      .on(
+        'postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'ihbarlar' }, 
+        (payload) => {
+          // Sadece kendisine atanan veya Admin/Müdür ise ses çal
+          const isTargeted = payload.new.atanan_personel === userId
+          if (isTargeted || userRole !== 'Saha Personeli') {
+            playAlert()
+          }
+          fetchData(userRole, userId)
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'ihbarlar' },
+        (payload) => {
+          // İş durumu değiştiğinde de ses çalabilir (isteğe bağlı)
+          if (payload.new.atanan_personel === userId && payload.old.durum !== payload.new.durum) {
+            playAlert()
+          }
+          fetchData(userRole, userId)
+        }
+      )
       .subscribe()
+
     return () => { supabase.removeChannel(channel) }
-  }, [userId, userRole, fetchData])
+  }, [userId, userRole, fetchData, playAlert])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -84,27 +113,15 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-black">
       
-      {/* SOL MENÜ - Dinamik Yetkilendirme */}
+      {/* SOL MENÜ */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
         <h2 className="text-xl font-bold mb-8 italic underline decoration-blue-400 tracking-wider uppercase font-black text-blue-100">İhbar Paneli</h2>
         <nav className="space-y-4 flex-1">
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-lg cursor-pointer flex items-center gap-2 hover:bg-blue-700 transition font-bold text-sm">🏠 Ana Sayfa</div>
-          
-          {canCreateJob && (
-            <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-bold">📢 İhbar Kayıt</div>
-          )}
-          
-          {canManageUsers && (
-            <div onClick={() => router.push('/dashboard/kullanici-ekle')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-bold">👤 Kullanıcı Ekle</div>
-          )}
-
-          {canManageMaterials && (
-            <div onClick={() => router.push('/dashboard/malzeme-yonetimi')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-bold">⚙️ Malzeme Kataloğu</div>
-          )}
-
-          {canSeeReports && (
-            <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 bg-green-800/50 text-sm font-bold">📊 Raporlama</div>
-          )}
+          {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-bold">📢 İhbar Kayıt</div>}
+          {canManageUsers && <div onClick={() => router.push('/dashboard/kullanici-ekle')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-bold">👤 Kullanıcı Ekle</div>}
+          {canManageMaterials && <div onClick={() => router.push('/dashboard/malzeme-yonetimi')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 text-sm font-bold">⚙️ Malzeme Kataloğu</div>}
+          {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-lg cursor-pointer transition flex items-center gap-2 bg-green-800/50 text-sm font-bold">📊 Raporlama</div>}
         </nav>
         <div className="mt-auto border-t border-blue-800 pt-4">
           <p className="text-[10px] text-blue-300 mb-2 uppercase font-black">Yetki: {userRole}</p>
@@ -124,26 +141,11 @@ export default function DashboardPage() {
           <button onClick={handleLogout} className="bg-red-500 px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95">Çıkış</button>
         </div>
 
-        {/* MOBİL HIZLI ERİŞİM (Dinamik) */}
+        {/* MOBİL HIZLI ERİŞİM */}
         <div className="md:hidden grid grid-cols-3 gap-2 mb-6">
-          {canCreateJob && (
-            <button onClick={() => router.push('/dashboard/yeni-ihbar')} className="bg-blue-600 text-white p-3 rounded-2xl shadow-lg flex flex-col items-center justify-center gap-1 active:scale-95 border-b-4 border-blue-800">
-              <span className="text-xl">📢</span>
-              <span className="text-[9px] font-black uppercase leading-none">İhbar</span>
-            </button>
-          )}
-          {canManageUsers && (
-            <button onClick={() => router.push('/dashboard/kullanici-ekle')} className="bg-purple-600 text-white p-3 rounded-2xl shadow-lg flex flex-col items-center justify-center gap-1 active:scale-95 border-b-4 border-purple-800">
-              <span className="text-xl">👤</span>
-              <span className="text-[9px] font-black uppercase leading-none text-center">Personel<br/>Ekle</span>
-            </button>
-          )}
-          {canSeeReports && (
-            <button onClick={() => router.push('/dashboard/raporlar')} className="bg-green-600 text-white p-3 rounded-2xl shadow-lg flex flex-col items-center justify-center gap-1 active:scale-95 border-b-4 border-green-800">
-              <span className="text-xl">📊</span>
-              <span className="text-[9px] font-black uppercase leading-none">Rapor</span>
-            </button>
-          )}
+          {canCreateJob && <button onClick={() => router.push('/dashboard/yeni-ihbar')} className="bg-blue-600 text-white p-3 rounded-2xl shadow-lg flex flex-col items-center justify-center gap-1 active:scale-95 border-b-4 border-blue-800"><span className="text-xl">📢</span><span className="text-[9px] font-black uppercase leading-none text-center">İhbar</span></button>}
+          {canManageUsers && <button onClick={() => router.push('/dashboard/kullanici-ekle')} className="bg-purple-600 text-white p-3 rounded-2xl shadow-lg flex flex-col items-center justify-center gap-1 active:scale-95 border-b-4 border-purple-800"><span className="text-xl">👤</span><span className="text-[9px] font-black uppercase leading-none text-center">Personel</span></button>}
+          {canSeeReports && <button onClick={() => router.push('/dashboard/raporlar')} className="bg-green-600 text-white p-3 rounded-2xl shadow-lg flex flex-col items-center justify-center gap-1 active:scale-95 border-b-4 border-green-800"><span className="text-xl">📊</span><span className="text-[9px] font-black uppercase leading-none text-center">Rapor</span></button>}
         </div>
 
         {/* İSTATİSTİKLER */}
@@ -156,7 +158,7 @@ export default function DashboardPage() {
             <h3 className="text-gray-400 text-[10px] font-black uppercase mb-1">İşlemde</h3>
             <p className="text-4xl md:text-5xl font-black">{stats.islemde}</p>
           </div>
-          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-green-500 text-green-500">
+          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-8 border-green-500 text-green-600">
             <h3 className="text-gray-400 text-[10px] font-black uppercase mb-1">Biten</h3>
             <p className="text-4xl md:text-5xl font-black">{stats.tamamlanan}</p>
           </div>
@@ -166,8 +168,12 @@ export default function DashboardPage() {
         <div className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
           <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
             <h2 className="text-lg md:text-xl font-bold text-gray-800">İş Emirleri</h2>
-            <div className="animate-pulse flex items-center gap-2 text-[10px] font-black text-green-500 uppercase">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span> Canlı
+            <div className="flex items-center gap-2">
+               {/* SES TEST BUTONU - Ali Usta'nın tarayıcıyı yetkilendirmesi için önemli */}
+               <button onClick={playAlert} className="text-[10px] bg-gray-100 px-2 py-1 rounded-lg hover:bg-gray-200 transition">🔔 Ses Test</button>
+               <div className="animate-pulse flex items-center gap-2 text-[10px] font-black text-green-500 uppercase">
+                 <span className="w-2 h-2 bg-green-500 rounded-full"></span> Canlı
+               </div>
             </div>
           </div>
           
