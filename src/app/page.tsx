@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { supabase } from '../../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { useEffect, useState, useCallback } from 'react'
 
 export default function DashboardPage() {
