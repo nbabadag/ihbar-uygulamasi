@@ -10,7 +10,7 @@ export default function DashboardPage() {
   const [ihbarlar, setIhbarlar] = useState<any[]>([])
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
-  const [userName, setUserName] = useState<string | null>(null) // Kullanıcı ismi için
+  const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
 
   const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis', 'Yönetici', 'Müdür', 'Admin'].includes(userRole || '')
@@ -111,8 +111,13 @@ export default function DashboardPage() {
         }`}
       >
         <div className="flex justify-between items-start mb-1">
-          <div className={`font-black text-[12px] uppercase leading-tight tracking-tighter ${isDelayed ? 'text-white' : 'text-gray-800 group-hover:text-blue-600'}`}>
-            {ihbar.musteri_adi}
+          <div className="flex flex-col">
+            <span className={`text-[10px] font-black italic ${isDelayed ? 'text-red-200' : 'text-blue-500'}`}>
+               #{ihbar.ifs_is_emri_no || 'IFS YOK'}
+            </span>
+            <div className={`font-black text-[12px] uppercase leading-tight tracking-tighter ${isDelayed ? 'text-white' : 'text-gray-800 group-hover:text-blue-600'}`}>
+              {ihbar.musteri_adi}
+            </div>
           </div>
           <div className={`text-[9px] font-bold ${isDelayed ? 'text-red-100' : 'text-gray-400'}`}>
             {new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}
@@ -127,8 +132,11 @@ export default function DashboardPage() {
               <span className={`text-[8px] font-black px-2 py-1 rounded-lg border ${isDelayed ? 'bg-red-700 border-red-400 text-white' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>👤 {ihbar.profiles?.full_name?.split(' ')[0] || 'Atanmadı'}</span>
             )}
           </div>
-          {isDelayed && <span className="text-[8px] font-black bg-white text-red-600 px-2 py-0.5 rounded animate-bounce">GECİKME!</span>}
-          {ihbar.durum === 'Calisiliyor' && <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>}
+          <div className="flex items-center gap-2">
+            {isDelayed && <span className="text-[8px] font-black bg-white text-red-600 px-2 py-0.5 rounded animate-bounce">GECİKME!</span>}
+            <span className={`text-[9px] font-bold ${isDelayed ? 'text-white' : 'text-gray-400'}`}>⏱️ {Math.floor(diff)} dk</span>
+            {ihbar.durum === 'Calisiliyor' && <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>}
+          </div>
         </div>
       </div>
     )
@@ -137,7 +145,19 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-black font-sans">
       
-      {/* SOL MENÜ */}
+      {/* MOBIL HEADER (Sadece mobilde görünür) */}
+      <div className="md:hidden bg-blue-900 text-white p-4 flex justify-between items-center shadow-lg sticky top-0 z-50">
+        <h2 className="text-lg font-black italic tracking-tighter">SAHA 360</h2>
+        <div className="flex items-center gap-3">
+           <div className="text-right flex flex-col">
+              <span className="text-[10px] font-bold leading-none">{userName}</span>
+              <span className="text-[8px] text-blue-300 uppercase leading-none">{userRole}</span>
+           </div>
+           <button onClick={handleLogout} className="bg-red-600 p-2 rounded-lg text-xs">🚪</button>
+        </div>
+      </div>
+
+      {/* SOL MENÜ (Masaüstü) */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360 Paneli</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm">
@@ -150,12 +170,9 @@ export default function DashboardPage() {
           <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer flex items-center gap-2 hover:bg-red-500 transition border-l-4 border-red-300 animate-pulse">📺 TV İzleme Paneli</div>
         </nav>
 
-        {/* KULLANICI KARTI VE ÇIKIŞ */}
         <div className="mt-auto border-t border-blue-800 pt-4 space-y-4">
           <div className="bg-blue-950/50 p-3 rounded-2xl border border-blue-800/50 flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center font-black text-xs shadow-lg">
-              {userName?.charAt(0) || 'U'}
-            </div>
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center font-black text-xs shadow-lg">{userName?.charAt(0) || 'U'}</div>
             <div className="flex flex-col overflow-hidden">
               <span className="text-[11px] font-black text-white truncate uppercase italic">{userName}</span>
               <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">{userRole}</span>
@@ -165,36 +182,62 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ANA İÇERİK - 3 SÜTUNLU KANBAN */}
-      <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold flex flex-col">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-140px)] lg:h-[calc(100vh-60px)]">
-          <div className="flex flex-col bg-yellow-50/40 rounded-[2.5rem] border-2 border-yellow-100 shadow-sm overflow-hidden text-black">
-            <div className="p-5 bg-yellow-400 text-yellow-900 flex justify-between items-center shadow-md">
-              <h3 className="text-xs font-black uppercase italic tracking-tighter">🟡 Açık İhbarlar</h3>
+      {/* ANA İÇERİK - 3 SÜTUNLU KANBAN (MOBİLDE ALT ALTA) */}
+      <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold">
+        {/* MOBİL İÇİN HIZLI MENÜ (Opsiyonel) */}
+        <div className="flex md:hidden gap-2 overflow-x-auto pb-4 mb-2 no-scrollbar font-black text-[10px] uppercase">
+             {canCreateJob && <button onClick={() => router.push('/dashboard/yeni-ihbar')} className="bg-sky-600 text-white px-4 py-2 rounded-full whitespace-nowrap">📢 İhbar Aç</button>}
+             <button onClick={() => router.push('/dashboard/izleme-ekrani')} className="bg-red-600 text-white px-4 py-2 rounded-full whitespace-nowrap">📺 TV Panel</button>
+        </div>
+
+        {/* KANBAN GRID: Mobilde 1 kolon, Büyük ekranlarda 3 kolon */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-60px)]">
+          
+          {/* AÇIK İHBARLAR */}
+          <div className="flex flex-col bg-yellow-50/40 rounded-[2rem] md:rounded-[2.5rem] border-2 border-yellow-100 shadow-sm overflow-hidden text-black h-[500px] lg:h-full">
+            <div className="p-4 md:p-5 bg-yellow-400 text-yellow-900 flex justify-between items-center shadow-md">
+              <h3 className="text-[11px] md:text-xs font-black uppercase italic tracking-tighter">🟡 Açık İhbarlar</h3>
               <span className="bg-yellow-900/10 px-3 py-1 rounded-full text-[10px] font-black">{stats.bekleyen}</span>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
-              {ihbarlar.filter(i => i.durum === 'Beklemede').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)}
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-1 custom-scrollbar">
+              {ihbarlar.filter(i => i.durum === 'Beklemede').length > 0 ? (
+                ihbarlar.filter(i => i.durum === 'Beklemede').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)
+              ) : (
+                <div className="text-center text-gray-400 text-xs py-10 italic">Açık ihbar bulunmuyor.</div>
+              )}
             </div>
           </div>
-          <div className="flex flex-col bg-blue-50/40 rounded-[2.5rem] border-2 border-blue-100 shadow-sm overflow-hidden text-black">
-            <div className="p-5 bg-blue-600 text-white flex justify-between items-center shadow-md">
-              <h3 className="text-xs font-black uppercase italic tracking-tighter">🔵 Atanan / İşlemde</h3>
+
+          {/* İŞLEMDE OLANLAR */}
+          <div className="flex flex-col bg-blue-50/40 rounded-[2rem] md:rounded-[2.5rem] border-2 border-blue-100 shadow-sm overflow-hidden text-black h-[500px] lg:h-full">
+            <div className="p-4 md:p-5 bg-blue-600 text-white flex justify-between items-center shadow-md">
+              <h3 className="text-[11px] md:text-xs font-black uppercase italic tracking-tighter">🔵 Atanan / İşlemde</h3>
               <span className="bg-blue-900/20 px-3 py-1 rounded-full text-[10px] font-black">{stats.islemde}</span>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
-              {ihbarlar.filter(i => i.durum === 'Islemde' || i.durum === 'Calisiliyor').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)}
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-1 custom-scrollbar">
+              {ihbarlar.filter(i => i.durum === 'Islemde' || i.durum === 'Calisiliyor').length > 0 ? (
+                ihbarlar.filter(i => i.durum === 'Islemde' || i.durum === 'Calisiliyor').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)
+              ) : (
+                <div className="text-center text-gray-400 text-xs py-10 italic">Devam eden iş bulunmuyor.</div>
+              )}
             </div>
           </div>
-          <div className="flex flex-col bg-green-50/40 rounded-[2.5rem] border-2 border-green-100 shadow-sm overflow-hidden text-black">
-            <div className="p-5 bg-green-600 text-white flex justify-between items-center shadow-md">
-              <h3 className="text-xs font-black uppercase italic tracking-tighter">🟢 Tamamlananlar</h3>
+
+          {/* TAMAMLANANLAR */}
+          <div className="flex flex-col bg-green-50/40 rounded-[2rem] md:rounded-[2.5rem] border-2 border-green-100 shadow-sm overflow-hidden text-black h-[500px] lg:h-full">
+            <div className="p-4 md:p-5 bg-green-600 text-white flex justify-between items-center shadow-md">
+              <h3 className="text-[11px] md:text-xs font-black uppercase italic tracking-tighter">🟢 Tamamlananlar</h3>
               <span className="bg-green-900/20 px-3 py-1 rounded-full text-[10px] font-black">{stats.tamamlanan}</span>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
-              {ihbarlar.filter(i => i.durum === 'Tamamlandi').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)}
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-1 custom-scrollbar">
+              {ihbarlar.filter(i => i.durum === 'Tamamlandi').length > 0 ? (
+                ihbarlar.filter(i => i.durum === 'Tamamlandi').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)
+              ) : (
+                <div className="text-center text-gray-400 text-xs py-10 italic">Tamamlanmış iş bulunmuyor.</div>
+              )}
             </div>
           </div>
+
         </div>
       </div>
 
@@ -202,6 +245,8 @@ export default function DashboardPage() {
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
   )
