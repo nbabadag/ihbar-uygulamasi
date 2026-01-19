@@ -26,6 +26,7 @@ export default function IhbarDetay() {
   const [miktar, setMiktar] = useState(0)
   const [searchTerm, setSearchTerm] = useState('')
   const [secilenMalzeme, setSecilenMalzeme] = useState<any>(null)
+  const [seciliYardimci, setSeciliYardimci] = useState('') 
   const [loading, setLoading] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState({ musteri_adi: '', konu: '', aciklama: '' })
@@ -69,7 +70,42 @@ export default function IhbarDetay() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // SORUMLU GÜNCELLEME (Admin/Mühendis Genel Atama)
+  // --- YARDIMCI PERSONEL EKLEME (GÜNCELLENDİ) ---
+  const yardimciEkle = async () => {
+    if (!seciliYardimci) return;
+    
+    // Mevcut yardımcıları al, eğer null ise boş dizi başlat
+    const mevcutYardimcilar = Array.isArray(ihbar.yardimcilar) ? ihbar.yardimcilar : [];
+    
+    // Eğer aynı kişi zaten ekliyse ekleme
+    if (mevcutYardimcilar.includes(seciliYardimci)) {
+      alert("Bu personel zaten ekipte!");
+      return;
+    }
+
+    const yeniYardimcilar = [...mevcutYardimcilar, seciliYardimci];
+
+    const { error } = await supabase
+      .from('ihbarlar')
+      .update({ yardimcilar: yeniYardimcilar })
+      .eq('id', id);
+
+    if (error) {
+      alert("Hata: Sütun bulunamadı veya yetki yok! Lütfen SQL komutunu çalıştırdığınızdan emin olun.");
+      console.error(error);
+    } else {
+      setSeciliYardimci(''); 
+      fetchData(); 
+    }
+  };
+
+  // YARDIMCI PERSONEL SİLME
+  const yardimciSil = async (isim: string) => {
+    const yeniYardimcilar = ihbar.yardimcilar.filter((y: string) => y !== isim);
+    const { error } = await supabase.from('ihbarlar').update({ yardimcilar: yeniYardimcilar }).eq('id', id);
+    if (!error) fetchData();
+  };
+
   const handleAssignmentUpdate = async () => {
     setLoading(true)
     const { error } = await supabase.from('ihbarlar').update({
@@ -83,7 +119,6 @@ export default function IhbarDetay() {
     setLoading(false)
   }
 
-  // FORMEN ÖZEL: İŞİ KENDİ ÜZERİNE AL
   const handleUstenle = async () => {
     setLoading(true)
     const { error } = await supabase.from('ihbarlar').update({
@@ -101,7 +136,8 @@ export default function IhbarDetay() {
     setLoading(true)
     const { error } = await supabase.from('ihbarlar').update({ 
       durum: 'Calisiliyor', 
-      kabul_tarihi: new Date().toISOString() 
+      kabul_tarihi: new Date().toISOString(),
+      atanan_personel: userId 
     }).eq('id', id)
     
     if (!error) { alert("İş Başlatıldı!"); fetchData(); }
@@ -139,7 +175,7 @@ export default function IhbarDetay() {
         {/* ÜST BAR */}
         <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <button onClick={() => router.push('/dashboard')} className="text-blue-900 font-black text-xs uppercase italic flex items-center gap-2">← Dashboard'a Dön</button>
-          <div className="flex gap-2 text-[10px] font-bold text-gray-400">
+          <div className="flex gap-2 text-[10px] font-bold text-gray-400 uppercase italic tracking-widest">
             {ihbar.ifs_is_emri_no ? `IFS: #${ihbar.ifs_is_emri_no}` : 'IFS NO GİRİLMEMİŞ'}
           </div>
         </div>
@@ -149,7 +185,6 @@ export default function IhbarDetay() {
           {/* SOL TARAF: İŞ BİLGİLERİ */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border-b-8 border-blue-900 relative overflow-hidden">
-              {/* Durum Badge */}
               <div className="absolute top-0 right-0 p-6">
                 <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border-2 ${
                   ihbar.durum === 'Tamamlandi' ? 'bg-green-50 text-green-700 border-green-200' : 
@@ -180,10 +215,27 @@ export default function IhbarDetay() {
                 </>
               )}
 
+              {/* EKİP ARKADAŞLARI GÖRÜNÜMÜ */}
+              {ihbar.yardimcilar && ihbar.yardimcilar.length > 0 && (
+                <div className="mb-6 p-4 bg-blue-50/50 rounded-3xl border border-blue-100">
+                  <p className="text-[9px] font-black text-blue-400 uppercase mb-2 italic tracking-widest">👥 Sahadaki Ekip Arkadaşları</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ihbar.yardimcilar.map((y: string, idx: number) => (
+                      <span key={idx} className="bg-white text-blue-700 px-3 py-1.5 rounded-xl text-[10px] font-black border border-blue-200 flex items-center gap-2 shadow-sm">
+                        👤 {y}
+                        {ihbar.durum === 'Calisiliyor' && (
+                          <button onClick={() => yardimciSil(y)} className="text-red-500 font-black hover:scale-125 transition-transform ml-1">×</button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* MALZEME TABLOSU */}
-              <div className="mt-10">
+              <div className="mt-6 border-t pt-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-black text-xs mb-4 text-gray-400 uppercase tracking-widest">📦 Kullanılan Malzeme Listesi</h3>
+                  <h3 className="font-black text-xs text-gray-400 uppercase tracking-widest">📦 Kullanılan Malzemeler</h3>
                   <button onClick={() => setEditMode(!editMode)} className="text-[10px] font-black uppercase text-blue-600 hover:underline">
                     {editMode ? '❌ İptal' : '✏️ İş Bilgisini Düzenle'}
                   </button>
@@ -194,10 +246,10 @@ export default function IhbarDetay() {
                   </thead>
                   <tbody className="divide-y text-sm font-bold">
                     {kullanilanlar.length > 0 ? kullanilanlar.map(k => (
-                      <tr key={k.id} className="hover:bg-blue-50/50 transition-all group">
+                      <tr key={k.id} className="hover:bg-blue-50/50 transition-all group text-xs uppercase italic">
                         <td className="p-3 text-blue-600 group-hover:font-black">{k.malzeme_kodu}</td>
-                        <td className="p-3 uppercase">{k.malzeme_adi}</td>
-                        <td className="p-3 text-right text-orange-600 font-black">{k.kullanim_adedi}</td>
+                        <td className="p-3">{k.malzeme_adi}</td>
+                        <td className="p-3 text-right text-orange-600 font-black italic">{k.kullanim_adedi}</td>
                       </tr>
                     )) : (
                       <tr><td colSpan={3} className="p-10 text-center text-gray-300 italic text-xs">Henüz malzeme eklenmedi.</td></tr>
@@ -208,69 +260,56 @@ export default function IhbarDetay() {
             </div>
           </div>
 
-          {/* SAĞ TARAF: YÖNETİM & ATAMA PANELİ */}
+          {/* SAĞ TARAF: YÖNETİM & İŞLEM PANELİ */}
           <div className="space-y-6">
-            
-            {/* 1. FORMEN & ADMIN ATAMA PANELİ */}
             {canEditAssignment && (
               <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-t-8 border-orange-500">
                 <h3 className="font-black text-sm uppercase text-orange-600 mb-6 italic tracking-tighter">Sorumlu Yönetimi</h3>
-                
-                {/* FORMEN HIZLI EYLEM */}
                 {isFormen && (ihbar.durum === 'Beklemede' || ihbar.durum === 'Islemde') && (
-                  <button 
-                    onClick={handleUstenle} 
-                    className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black text-xs uppercase shadow-lg shadow-blue-100 mb-6 active:scale-95 transition-all border-b-4 border-blue-800"
-                  >
-                    🚀 İşi Kendi Üzerine Al
-                  </button>
+                  <button onClick={handleUstenle} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black text-xs uppercase shadow-lg mb-6 border-b-4 border-blue-800">🚀 İşi Kendi Üzerine Al</button>
                 )}
-
                 <div className="space-y-3 pt-4 border-t border-gray-100">
-                  <p className="text-[9px] font-black text-gray-400 uppercase text-center italic">Veya Başkasına Atama Yap</p>
                   <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
-                    <button onClick={() => setAtamaTuru('personel')} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${atamaTuru === 'personel' ? 'bg-white shadow text-blue-600' : 'text-gray-400'}`}>Kişi Ata</button>
-                    <button onClick={() => setAtamaTuru('grup')} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${atamaTuru === 'grup' ? 'bg-white shadow text-orange-600' : 'text-gray-400'}`}>Grup Ata</button>
+                    <button onClick={() => setAtamaTuru('personel')} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase ${atamaTuru === 'personel' ? 'bg-white shadow text-blue-600' : 'text-gray-400'}`}>Kişi Ata</button>
+                    <button onClick={() => setAtamaTuru('grup')} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase ${atamaTuru === 'grup' ? 'bg-white shadow text-orange-600' : 'text-gray-400'}`}>Grup Ata</button>
                   </div>
-                  <input placeholder="IFS İş Emri No" className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl font-black text-xs placeholder-blue-300 outline-none focus:ring-2 focus:ring-blue-200" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
-                  <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl font-bold text-xs uppercase outline-none focus:ring-2 focus:ring-gray-200">
+                  <input placeholder="IFS İş Emri No" className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl font-black text-xs uppercase" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
+                  <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl font-bold text-xs uppercase">
                     <option value="">👤 Personel/Grup Seçin...</option>
                     {atamaTuru === 'personel' 
-                      ? personeller.map(p => <option key={p.id} value={p.id}>{p.full_name} ({p.role})</option>)
+                      ? personeller.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)
                       : gruplar.map(g => <option key={g.id} value={g.id}>{g.grup_adi}</option>)
                     }
                   </select>
-                  <button 
-                    onClick={handleAssignmentUpdate} 
-                    disabled={loading || !seciliAtanan} 
-                    className="w-full bg-gray-800 text-white p-4 rounded-2xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all disabled:opacity-50"
-                  >
-                    ATAMAYI ONAYLA
-                  </button>
+                  <button onClick={handleAssignmentUpdate} disabled={loading || !seciliAtanan} className="w-full bg-gray-800 text-white p-4 rounded-2xl font-black text-[10px] uppercase shadow-lg">ATAMAYI ONAYLA</button>
                 </div>
               </div>
             )}
 
-            {/* 2. İŞLEM PANELİ (Kabul Et & Kapat) */}
             <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-2 border-blue-600 sticky top-6">
               <h3 className="font-black text-xl mb-6 text-blue-900 italic uppercase tracking-tighter">Saha İşlemleri</h3>
               
               {ihbar.durum === 'Islemde' || ihbar.durum === 'Beklemede' ? (
-                <button 
-                  onClick={isiBaslat} 
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-3xl font-black shadow-xl animate-pulse transition-all active:scale-95 uppercase italic text-sm"
-                >
-                  🛠️ İŞİ ŞİMDİ BAŞLAT
-                </button>
+                <button onClick={isiBaslat} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-3xl font-black shadow-xl animate-pulse uppercase italic text-sm">🛠️ İŞİ ŞİMDİ BAŞLAT</button>
               ) : ihbar.durum === 'Calisiliyor' ? (
-                <div className="space-y-4 animate-in fade-in duration-500">
-                  <div className="p-3 bg-blue-50 rounded-2xl border border-blue-200 text-center">
-                    <p className="text-blue-700 font-black text-[10px] uppercase italic">⚡ ÇALIŞMA DEVAM EDİYOR...</p>
-                  </div>
+                <div className="space-y-4">
                   
-                  {/* MALZEME ARAMA */}
+                  {/* YARDIMCI EKLEME PANELİ */}
+                  <div className="p-4 bg-blue-50 rounded-3xl border-2 border-dashed border-blue-200">
+                    <p className="text-[10px] font-black text-blue-600 uppercase mb-3 italic">🤝 Ekip Arkadaşı Ekle</p>
+                    <div className="flex gap-2">
+                      <select value={seciliYardimci} onChange={e=>setSeciliYardimci(e.target.value)} className="flex-1 p-3 bg-white border rounded-xl font-black text-[10px] uppercase outline-none">
+                        <option value="">Personel Seç...</option>
+                        {personeller.filter(p => p.id !== userId).map(p => <option key={p.id} value={p.full_name}>{p.full_name}</option>)}
+                      </select>
+                      <button onClick={yardimciEkle} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px]">EKLE</button>
+                    </div>
+                  </div>
+
+                  <hr className="opacity-10" />
+
                   <div className="relative">
-                    <input type="text" placeholder="🔍 Malzeme Ara..." className="w-full p-4 border rounded-2xl font-bold text-xs bg-gray-50 outline-none focus:ring-2 focus:ring-blue-100" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
+                    <input type="text" placeholder="🔍 Malzeme Ara..." className="w-full p-4 border rounded-2xl font-bold text-xs bg-gray-50" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
                     {searchTerm && (
                       <div className="absolute left-0 right-0 mt-2 bg-white border rounded-2xl shadow-2xl max-h-48 overflow-auto z-50">
                         {malzemeKatalog.filter(m => m.malzeme_adi.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 15).map(m => (
@@ -284,37 +323,19 @@ export default function IhbarDetay() {
                   </div>
 
                   {secilenMalzeme && (
-                    <div className="flex items-center gap-2 p-3 bg-emerald-50 text-emerald-900 rounded-2xl border border-emerald-100 animate-in slide-in-from-left">
+                    <div className="flex items-center gap-2 p-3 bg-emerald-50 text-emerald-900 rounded-2xl border border-emerald-100">
                       <span className="text-[10px] font-black uppercase flex-1 truncate">✅ {secilenMalzeme.malzeme_adi}</span>
-                      <input type="number" placeholder="Adet" className="w-16 p-2 bg-white border rounded-xl font-black text-xs outline-none" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
+                      <input type="number" className="w-16 p-2 bg-white border rounded-xl font-black text-xs" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
                       <button onClick={malzemeEkle} className="bg-emerald-600 text-white p-2 px-3 rounded-xl font-black text-[9px] uppercase">EKLE</button>
                     </div>
                   )}
 
-                  <hr className="opacity-50" />
-
                   <div className="space-y-2">
                     <p className="text-[9px] font-black text-gray-400 uppercase italic">Yapılan İşlem Özeti (Zorunlu)</p>
-                    <textarea className="w-full p-4 border rounded-2xl bg-gray-50 text-xs font-bold outline-none focus:ring-2 focus:ring-green-100" placeholder="Örn: Arıza giderildi, parça değişti..." rows={3} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
+                    <textarea className="w-full p-4 border rounded-2xl bg-gray-50 text-xs font-bold" placeholder="Örn: Arıza giderildi, parça değişti..." rows={3} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <p className="text-[8px] font-black text-gray-400 uppercase pl-1">Tarih</p>
-                      <input type="date" className="w-full p-3 border rounded-xl font-bold text-[10px]" value={kapatmaTarihi} onChange={e=>setKapatmaTarihi(e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[8px] font-black text-gray-400 uppercase pl-1">Bitiş Saati</p>
-                      <input type="time" className="w-full p-3 border rounded-xl font-bold text-[10px]" value={bitisSaati} onChange={e=>setBitisSaati(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={isiTamamla} 
-                    className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-3xl font-black shadow-xl transition-all active:scale-95 uppercase italic text-sm border-b-4 border-green-800"
-                  >
-                    🏁 İŞİ TAMAMLA VE KAPAT
-                  </button>
+                  <button onClick={isiTamamla} className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-3xl font-black shadow-xl uppercase italic text-sm border-b-4 border-green-800">🏁 İŞİ TAMAMLA VE KAPAT</button>
                 </div>
               ) : (
                 <div className="text-center p-12 bg-gray-50 rounded-[2.5rem] border-4 border-dashed border-gray-100">
