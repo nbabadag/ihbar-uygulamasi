@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -12,10 +12,19 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata = {
-  title: 'İhbar Paneli',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0',
+// 1. ADIM: Viewport ayarlarını ayrı bir sabit olarak tanımlıyoruz (Yeni standart)
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 }
+
+// 2. ADIM: Sadece bir tane metadata tanımı bırakıyoruz
+export const metadata: Metadata = {
+  title: 'İhbar Takip Sistemi',
+  description: 'Saha Personel Takip Paneli',
+};
 
 export default function RootLayout({
   children,
@@ -23,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="tr">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

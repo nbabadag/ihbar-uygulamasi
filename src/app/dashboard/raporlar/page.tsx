@@ -164,11 +164,12 @@ export default function RaporlarPage() {
                       <td className="p-4 font-black text-[10px] uppercase tracking-tighter"><span className="bg-gray-100 px-2 py-1 rounded-md">{ihbar.konu}</span></td>
                       <td className="p-4 text-xs italic text-gray-600 leading-relaxed">"{ihbar.aciklama}"</td>
                       <td className="p-4">
-                        {ihbar.ihbar_malzemeleri.map((m: any) => (
-                          <div key={m.id} className="text-[9px] bg-orange-50 text-orange-700 px-2 py-0.5 rounded-md mb-1 border border-orange-100 inline-block mr-1 font-bold whitespace-nowrap">
-                            {m.kullanim_adedi}x {m.malzeme_adi}
-                          </div>
-                        ))}
+                      {ihbar.ihbar_malzemeleri.map((m: any, index: number) => (
+  // Key değerini m.id ve index birleşimi yaparak benzersiz kılıyoruz
+  <div key={`${m.id}-${index}`} className="text-[9px] bg-orange-50 ...">
+    {m.kullanim_adedi}x {m.malzeme_adi}
+  </div>
+))}
                       </td>
                     </tr>
                   ))}

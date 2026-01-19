@@ -66,7 +66,7 @@ export default function DashboardPage() {
     // Vercel Build Hatası Çözümü: Notification kontrolünü güvenli hale getirdik
     if (typeof window !== "undefined" && "Notification" in window) {
       if (Notification.permission === "default") {
-        Notification.requestPermission()
+        Notification.requestPermission();
       }
     }
 
