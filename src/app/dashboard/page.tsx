@@ -13,17 +13,15 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
 
-  // --- YETKİ KONTROLLERİ (ADMIN TAM YETKİ EKLENDİ) ---
+  // --- YETKİ KONTROLLERİ ---
   const normalizedRole = userRole?.trim() || '';
   
-  // 1. Menü Görünürlükleri
   const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
   const canManageUsers = ['Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
   const canSeeReports = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
   const canSeeTV = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi', 'Admin'].includes(normalizedRole);
   const canManageGroups = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
 
-  // 2. Sütun ve Havuz Görme Yetkisi
   const seePool = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi', 'Admin'].includes(normalizedRole);
 
   useEffect(() => {
@@ -41,16 +39,15 @@ export default function DashboardPage() {
     
     let query = supabase.from('ihbarlar').select(`*, profiles (full_name), calisma_gruplari (grup_adi)`)
     
-    // --- QUERY LOGIC (ADMIN VE MÜDÜR İÇİN FİLTRESİZ ÇEKİM) ---
+    // --- QUERY LOGIC DÜZELTİLDİ ---
     if (role === 'Saha Personeli') {
-      // Sadece kendine atananları gör
+      // Saha Personeli sadece kendine atananları görür
       query = query.eq('atanan_personel', id)
     } 
-    else if (role === 'Formen') {
-      // Kendi işlerini + Havuzdakileri gör
-      query = query.or(`atanan_personel.is.null,atanan_personel.eq.${id}`)
+    else if (role === 'Formen' || role === 'Çağrı Merkezi' || role === 'Mühendis-Yönetici' || role === 'Müdür' || role === 'Admin') {
+      // Formen ve üstü roller havuzu ve tüm aktif işleri görmeli. 
+      // Herhangi bir kısıtlama koymuyoruz ki tüm tabloyu alabilsinler.
     }
-    // Admin, Müdür ve Mühendis her şeyi görür (Ekstra filtre uygulanmaz)
 
     const { data: ihbarData } = await query.order('created_at', { ascending: false })
     
@@ -62,7 +59,6 @@ export default function DashboardPage() {
         tamamlanan: ihbarData.filter(i => i.durum === 'Tamamlandi').length
       })
 
-      // Gecikme Alarmı
       if (seePool) {
         const hasDelayedJob = ihbarData.some(i => {
           if (i.durum !== 'Beklemede') return false
