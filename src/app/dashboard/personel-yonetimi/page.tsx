@@ -10,6 +10,10 @@ export default function KullaniciDenetimMerkezi() {
   const [loading, setLoading] = useState(true)
   const [editingUser, setEditingUser] = useState<any>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
+  
+  // --- YENİ: SİSTEM AYARLARI STATE ---
+  const [konumModu, setKonumModu] = useState<'muhurleme' | 'canli_takip'>('muhurleme')
+  const [ayarYukleniyor, setAyarYukleniyor] = useState(false)
 
   // Form State
   const [email, setEmail] = useState('')
@@ -18,17 +22,15 @@ export default function KullaniciDenetimMerkezi() {
   const [phone, setPhone] = useState('')
   const [role, setRole] = useState('Saha Personeli')
 
-  // --- YETKİ KONTROLLERİ (HİYERARŞİ GÜNCELLENDİ) ---
-  const isAdmin = currentUserRole === 'Admin' // Admin Yetkisi Eklendi
+  // --- YETKİ KONTROLLERİ ---
+  const isAdmin = currentUserRole === 'Admin'
   const isManager = currentUserRole === 'Müdür'
   const isEngineer = currentUserRole === 'Mühendis-Yönetici'
   
-  // Sadece Admin ve Müdür silebilir
   const canDelete = isAdmin || isManager 
-  // Admin, Müdür ve Mühendis-Yönetici personel ekleyebilir/düzenleyebilir
   const canManage = isAdmin || isManager || isEngineer 
 
-  // KULLANICILARI VE OTURUMU ÇEK
+  // VERİLERİ ÇEK
   const fetchData = useCallback(async () => {
     setLoading(true)
     
@@ -39,7 +41,11 @@ export default function KullaniciDenetimMerkezi() {
       setCurrentUserRole(profile?.role || '')
     }
 
-    // 2. Tüm Personeli Çek (View üzerinden e-posta dahil)
+    // 2. Sistem Ayarlarını Çek (Konum Modu)
+    const { data: ayarData } = await supabase.from('sistem_ayarlari').select('deger').eq('ayar_adi', 'konum_modu').single()
+    if (ayarData) setKonumModu(ayarData.deger as any)
+
+    // 3. Tüm Personeli Çek
     const { data, error } = await supabase
       .from('personel_listesi') 
       .select('*')
@@ -50,6 +56,25 @@ export default function KullaniciDenetimMerkezi() {
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // --- YENİ: KONUM MODU GÜNCELLEME FONKSİYONU ---
+  const handleKonumModuGuncelle = async (yeniMod: 'muhurleme' | 'canli_takip') => {
+    if (!canManage) return alert("Ayar değiştirme yetkiniz yok.")
+    setAyarYukleniyor(true)
+    
+    const { error } = await supabase
+      .from('sistem_ayarlari')
+      .update({ deger: yeniMod })
+      .eq('ayar_adi', 'konum_modu')
+
+    if (!error) {
+      setKonumModu(yeniMod)
+      alert(`Sistem başarıyla "${yeniMod === 'muhurleme' ? 'Noktasal Mühürleme' : 'Canlı Takip'}" moduna geçirildi.`)
+    } else {
+      alert("Hata: " + error.message)
+    }
+    setAyarYukleniyor(false)
+  }
 
   // YENİ KAYIT
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -137,31 +162,60 @@ export default function KullaniciDenetimMerkezi() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* KAYIT FORMU */}
-          <div className="lg:col-span-1 bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 h-fit">
-            <h2 className="font-black mb-4 text-blue-800 uppercase text-[10px] italic tracking-widest">Yeni Personel Tanımla</h2>
-            {canManage ? (
-              <form onSubmit={handleCreateUser} className="space-y-3">
-                <input type="text" placeholder="Ad Soyad" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 text-black" required />
-                <input type="email" placeholder="E-Posta" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 text-black" required />
-                <input type="password" placeholder="Şifre" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 text-black" required />
-                <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3 bg-blue-50 border-2 border-blue-100 rounded-2xl font-black italic text-[11px] uppercase text-black">
-                  <option value="Saha Personeli">Saha Personeli</option>
-                  <option value="Formen">Formen</option>
-                  <option value="Çağrı Merkezi">Çağrı Merkezi</option>
-                  <option value="Mühendis-Yönetici">Mühendis-Yönetici</option>
-                  <option value="Müdür">Müdür</option>
-                  <option value="Admin">Admin</option>
-                </select>
-                <button disabled={loading} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-blue-700 active:scale-95 transition-all italic">
-                  {loading ? 'İŞLEM YAPILIYOR...' : 'SİSTEME KAYDET'}
+          
+          <div className="lg:col-span-1 space-y-6">
+            {/* KAYIT FORMU */}
+            <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100">
+              <h2 className="font-black mb-4 text-blue-800 uppercase text-[10px] italic tracking-widest">Yeni Personel Tanımla</h2>
+              {canManage ? (
+                <form onSubmit={handleCreateUser} className="space-y-3">
+                  <input type="text" placeholder="Ad Soyad" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 text-black" required />
+                  <input type="email" placeholder="E-Posta" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 text-black" required />
+                  <input type="password" placeholder="Şifre" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 text-black" required />
+                  <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3 bg-blue-50 border-2 border-blue-100 rounded-2xl font-black italic text-[11px] uppercase text-black">
+                    <option value="Saha Personeli">Saha Personeli</option>
+                    <option value="Formen">Formen</option>
+                    <option value="Çağrı Merkezi">Çağrı Merkezi</option>
+                    <option value="Mühendis-Yönetici">Mühendis-Yönetici</option>
+                    <option value="Müdür">Müdür</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                  <button disabled={loading} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-blue-700 active:scale-95 transition-all italic">
+                    {loading ? 'İŞLEM YAPILIYOR...' : 'SİSTEME KAYDET'}
+                  </button>
+                </form>
+              ) : (
+                <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-bold uppercase italic border border-red-100">
+                  ⚠️ Yetki kısıtlı.
+                </div>
+              )}
+            </div>
+
+            {/* --- YENİ: SİSTEM AYARLARI PANELİ --- */}
+            <div className="bg-blue-900 p-6 rounded-[2.5rem] shadow-2xl text-white">
+              <h2 className="font-black mb-4 text-blue-300 uppercase text-[10px] italic tracking-widest border-b border-blue-800 pb-2">🛰️ Saha Operasyon Modu</h2>
+              <div className="space-y-3">
+                <button 
+                  onClick={() => handleKonumModuGuncelle('muhurleme')}
+                  disabled={ayarYukleniyor}
+                  className={`w-full p-4 rounded-2xl text-[10px] font-black uppercase transition-all ${konumModu === 'muhurleme' ? 'bg-white text-blue-900 shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-105' : 'bg-blue-800 text-blue-300 border border-blue-700 opacity-60'}`}
+                >
+                  📍 NOKTASAL MÜHÜRLEME
                 </button>
-              </form>
-            ) : (
-              <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-bold uppercase italic border border-red-100">
-                ⚠️ Personel ekleme yetkiniz bulunmamaktadır.
+                <button 
+                  onClick={() => handleKonumModuGuncelle('canli_takip')}
+                  disabled={ayarYukleniyor}
+                  className={`w-full p-4 rounded-2xl text-[10px] font-black uppercase transition-all ${konumModu === 'canli_takip' ? 'bg-orange-500 text-white shadow-[0_0_20px_rgba(249,115,22,0.5)] scale-105' : 'bg-blue-800 text-blue-300 border border-blue-700 opacity-60'}`}
+                >
+                  📡 CANLI TAKİP MODU
+                </button>
+                <p className="text-[8px] font-bold text-blue-400 italic text-center mt-2 px-2 leading-tight">
+                  {konumModu === 'muhurleme' 
+                    ? '* Sadece İş Başlangıç ve Bitiş koordinatları kayıt altına alınır.' 
+                    : '* İş süresince her 5 dakikada bir personel konumu güncellenir.'}
+                </p>
               </div>
-            )}
+            </div>
           </div>
 
           {/* LİSTE TABLOSU */}
@@ -183,7 +237,7 @@ export default function KullaniciDenetimMerkezi() {
                       <div className="text-[10px] text-blue-600 font-black uppercase italic">{u.role}</div>
                     </td>
                     <td className="p-6">
-                      <div className="text-xs font-black text-blue-900 lowercase">{u.email}</div>
+                      <div className="text-xs font-black text-blue-900">{u.email}</div>
                       <div className="text-[10px] font-bold text-gray-400 mt-0.5">{u.phone_number || '-'}</div>
                     </td>
                     <td className="p-6">
@@ -202,12 +256,11 @@ export default function KullaniciDenetimMerkezi() {
                 ))}
               </tbody>
             </table>
-            {loading && !editingUser && <div className="p-10 text-center font-black text-gray-300 uppercase italic animate-pulse">Yükleniyor...</div>}
           </div>
         </div>
       </div>
 
-      {/* DÜZENLEME MODALI */}
+      {/* DÜZENLEME MODALI (AYNI KALDI) */}
       {editingUser && (
         <div className="fixed inset-0 bg-blue-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 text-black">
           <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border-4 border-white">
@@ -221,7 +274,6 @@ export default function KullaniciDenetimMerkezi() {
                 <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Ad Soyad</label>
                 <input type="text" value={editingUser.full_name} onChange={e => setEditingUser({...editingUser, full_name: e.target.value})} className="w-full p-3 bg-gray-50 border-2 rounded-2xl font-bold outline-none focus:border-blue-500 text-black" />
               </div>
-
               <div>
                 <label className="text-[10px] font-black uppercase text-gray-400 ml-2 tracking-widest">Yetki Seviyesi</label>
                 <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} className="w-full p-3 bg-blue-50 border-2 border-blue-100 rounded-2xl font-black uppercase italic text-xs text-black">
