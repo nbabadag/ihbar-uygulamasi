@@ -13,18 +13,18 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
 
-  // --- YETKİ KONTROLLERİ ---
-  const normalizedRole = userRole?.trim().toLowerCase() || '';
-  const isRestricted = normalizedRole.includes('personel') || 
-                       normalizedRole.includes('saha') || 
-                       normalizedRole.includes('teknik') || 
-                       normalizedRole.includes('usta');
+  // --- YETKİ KONTROLLERİ (Yeni Kurallara Göre) ---
+  const normalizedRole = userRole?.trim() || '';
+  
+  // 1. Menü Görünürlükleri
+  const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
+  const canManageUsers = ['Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
+  const canSeeReports = ['Formen', 'Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
+  const canSeeTV = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi'].includes(normalizedRole);
+  const canManageGroups = ['Formen', 'Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
 
-  const canCreateJob = ['çağrı merkezi', 'formen', 'mühendis', 'yönetici', 'müdür', 'admin'].includes(normalizedRole);
-  const canManageUsers = ['mühendis', 'yönetici', 'müdür', 'admin'].includes(normalizedRole);
-  const canSeeReports = ['formen', 'mühendis', 'yönetici', 'müdür', 'admin'].includes(normalizedRole);
-  const canManageMaterials = !isRestricted || normalizedRole === 'formen';
-  const canSeeTV = !isRestricted || normalizedRole === 'formen';
+  // 2. Sütun ve Havuz Görme Yetkisi
+  const seePool = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi'].includes(normalizedRole);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000)
@@ -38,20 +38,19 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
-    const nRole = role.trim().toLowerCase();
+    
     let query = supabase.from('ihbarlar').select(`*, profiles (full_name), calisma_gruplari (grup_adi)`)
     
-    const isFieldWorker = nRole.includes('personel') || nRole.includes('saha') || nRole.includes('teknik') || nRole.includes('usta');
-
-    if (isFieldWorker && nRole !== 'formen' && nRole !== 'admin') {
+    // --- QUERY LOGIC (Nusret'in Kuralları) ---
+    if (role === 'Saha Personeli') {
+      // Sadece kendine atananları gör (Havuz kapalı)
       query = query.eq('atanan_personel', id)
     } 
-    else if (nRole === 'formen') {
-      const { data: userGroups } = await supabase.from('grup_uyeleri').select('grup_id').eq('profil_id', id)
-      const groupIds = userGroups?.map(g => g.grup_id) || []
-      const groupFilter = groupIds.length > 0 ? `,atanan_grup_id.in.(${groupIds.join(',')})` : ''
-      query = query.or(`atanan_personel.is.null,atanan_personel.eq.${id}${groupFilter}`)
+    else if (role === 'Formen') {
+      // Kendi işlerini + Havuzdakileri (Atanmamışları) gör
+      query = query.or(`atanan_personel.is.null,atanan_personel.eq.${id}`)
     }
+    // Mühendis ve Müdür her şeyi görür (Filtre ekleme)
 
     const { data: ihbarData } = await query.order('created_at', { ascending: false })
     
@@ -63,14 +62,17 @@ export default function DashboardPage() {
         tamamlanan: ihbarData.filter(i => i.durum === 'Tamamlandi').length
       })
 
-      const hasDelayedJob = ihbarData.some(i => {
-        if (i.durum !== 'Beklemede') return false
-        const diff = (new Date().getTime() - new Date(i.created_at).getTime()) / 60000
-        return diff >= 30
-      })
-      if (hasDelayedJob) playAlert()
+      // Gecikme Alarmı (Sadece görmeye yetkili olanlar için çalsın)
+      if (seePool) {
+        const hasDelayedJob = ihbarData.some(i => {
+          if (i.durum !== 'Beklemede') return false
+          const diff = (new Date().getTime() - new Date(i.created_at).getTime()) / 60000
+          return diff >= 30
+        })
+        if (hasDelayedJob) playAlert()
+      }
     }
-  }, [playAlert])
+  }, [playAlert, seePool])
 
   useEffect(() => {
     const checkUser = async () => {
@@ -93,12 +95,11 @@ export default function DashboardPage() {
     if (!userId || !userRole) return
     const channel = supabase.channel('canli-is-takibi')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => {
-        playAlert()
         fetchData(userRole, userId)
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [userId, userRole, fetchData, playAlert])
+  }, [userId, userRole, fetchData])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -115,9 +116,9 @@ export default function DashboardPage() {
       <div 
         onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)}
         className={`p-4 rounded-2xl shadow-sm border mb-3 cursor-pointer transition-all active:scale-[0.98] ${
-          isDelayed ? 'bg-red-600 border-red-400 text-white animate-pulse' : 
+          isDelayed ? 'bg-red-600 border-red-400 text-white animate-pulse shadow-lg shadow-red-200' : 
           isOnHold ? 'bg-orange-50 border-orange-200 text-orange-900 border-l-8 border-l-orange-500' :
-          isUnassigned && normalizedRole === 'formen' ? 'bg-blue-50 border-blue-200 border-dashed text-black hover:bg-blue-100' :
+          isUnassigned ? 'bg-blue-50 border-blue-200 border-dashed text-black hover:bg-blue-100' :
           'bg-white border-gray-100 text-black hover:shadow-md hover:border-blue-400'
         }`}
       >
@@ -137,12 +138,13 @@ export default function DashboardPage() {
         <div className={`text-[10px] font-bold uppercase mb-3 truncate italic ${isDelayed ? 'text-red-50' : 'text-gray-500'}`}>{ihbar.konu}</div>
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-1">
-            <span className={`text-[8px] font-black px-2 py-1 rounded-lg border ${isDelayed ? 'bg-red-700 border-red-400' : 'bg-gray-50 border-gray-100'}`}>
+            <span className={`text-[8px] font-black px-2 py-1 rounded-lg border ${isDelayed ? 'bg-red-700 border-red-400 text-white' : 'bg-gray-50 border-gray-100'}`}>
               {ihbar.atanan_grup_id ? `👥 ${ihbar.calisma_gruplari?.grup_adi}` : `👤 ${ihbar.profiles?.full_name?.split(' ')[0] || 'HAVUZDA'}`}
             </span>
+            {isDelayed && <span className="text-[7px] font-black bg-white text-red-600 px-1.5 py-0.5 rounded animate-bounce">KRİTİK!</span>}
             {isOnHold && <span className="text-[7px] font-black bg-orange-500 text-white px-1.5 py-0.5 rounded animate-bounce">DURDU!</span>}
           </div>
-          <span className="text-[9px] font-bold opacity-60">⏱️ {Math.floor(diff)} dk</span>
+          <span className={`text-[9px] font-bold ${isDelayed ? 'text-white' : 'opacity-60'}`}>⏱️ {Math.floor(diff)} dk</span>
         </div>
       </div>
     )
@@ -168,11 +170,11 @@ export default function DashboardPage() {
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm">
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
-          {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">📢 İhbar Kayıt</div>}
-          {canManageUsers && <div onClick={() => router.push('/dashboard/kullanici-ekle')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">👤 Personel Yönetimi</div>}
-          {canManageUsers && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">👥 Çalışma Grupları</div>}
-          {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer animate-pulse">📺 TV İzleme Paneli</div>}
-          {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">📊 Raporlama</div>}
+          {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all">📢 İhbar Kayıt</div>}
+          {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all">👤 Personel Yönetimi</div>}
+          {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all">👥 Çalışma Grupları</div>}
+          {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer animate-pulse transition-all">📺 TV İzleme Paneli</div>}
+          {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all">📊 Raporlama</div>}
         </nav>
         <div className="mt-auto border-t border-blue-800 pt-4 space-y-4">
           <div className="bg-blue-950/50 p-3 rounded-2xl border border-blue-800/50">
@@ -187,23 +189,25 @@ export default function DashboardPage() {
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           
-          {/* AÇIK İHBARLAR */}
-          <div className="flex flex-col bg-yellow-50/50 rounded-[2rem] border-2 border-yellow-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)]">
-            <div className="p-4 bg-yellow-400 text-yellow-900 flex justify-between items-center shadow-md">
-              <h3 className="text-[11px] font-black uppercase italic tracking-tighter">🟡 Açık İhbarlar</h3>
-              <span className="bg-yellow-900/10 px-3 py-1 rounded-full text-[10px] font-black">{stats.bekleyen}</span>
+          {/* AÇIK İHBARLAR (HAVUZ) */}
+          {seePool && (
+            <div className="flex flex-col bg-yellow-50/50 rounded-[2rem] border-2 border-yellow-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)]">
+              <div className="p-4 bg-yellow-400 text-yellow-900 flex justify-between items-center shadow-md">
+                <h3 className="text-[11px] font-black uppercase italic tracking-tighter">🟡 Açık İhbarlar (Havuz)</h3>
+                <span className="bg-yellow-900/10 px-3 py-1 rounded-full text-[10px] font-black">{stats.bekleyen}</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                {ihbarlar.filter(i => i.durum === 'Beklemede').length > 0 ? (
+                  ihbarlar.filter(i => i.durum === 'Beklemede').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)
+                ) : (
+                  <div className="text-center text-gray-400 text-xs py-10 italic">Açık ihbar bulunmuyor.</div>
+                )}
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
-              {ihbarlar.filter(i => i.durum === 'Beklemede').length > 0 ? (
-                ihbarlar.filter(i => i.durum === 'Beklemede').map(ihbar => <JobCard key={ihbar.id} ihbar={ihbar} />)
-              ) : (
-                <div className="text-center text-gray-400 text-xs py-10 italic">Açık ihbar bulunmuyor.</div>
-              )}
-            </div>
-          </div>
+          )}
 
           {/* İŞLEMDE OLANLAR / DURDURULANLAR */}
-          <div className="flex flex-col bg-blue-50/50 rounded-[2rem] border-2 border-blue-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)]">
+          <div className={`flex flex-col bg-blue-50/50 rounded-[2rem] border-2 border-blue-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)] ${!seePool ? 'lg:col-span-2' : ''}`}>
             <div className="p-4 bg-blue-600 text-white flex justify-between items-center shadow-md">
               <h3 className="text-[11px] font-black uppercase italic tracking-tighter">🔵 İşlemde / Durdu</h3>
               <span className="bg-blue-900/20 px-3 py-1 rounded-full text-[10px] font-black">{stats.islemde}</span>

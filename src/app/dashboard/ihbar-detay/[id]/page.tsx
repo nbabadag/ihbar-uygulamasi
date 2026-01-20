@@ -31,8 +31,21 @@ export default function IhbarDetay() {
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState({ musteri_adi: '', konu: '', aciklama: '' })
 
-  const canEditAssignment = ['Formen', 'Mühendis', 'Yönetici', 'Müdür', 'Admin'].includes(userRole)
-  const isFormen = userRole === 'Formen';
+  // --- YETKİ KONTROLLERİ (NUSRET ANALİST KURALLARI) ---
+  const normalizedRole = userRole?.trim();
+  const isSaha = normalizedRole === 'Saha Personeli';
+  const isFormen = normalizedRole === 'Formen';
+  const isManager = normalizedRole === 'Müdür';
+  const isEngineer = normalizedRole === 'Mühendis-Yönetici';
+
+  // İş Atama/Geri Al Yetkisi: Formen, Mühendis, Müdür ve Çağrı Merkezi
+  const canEditAssignment = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi'].includes(normalizedRole);
+  
+  // İhbar Detayı Düzenleme Yetkisi: Formen, Mühendis, Müdür ve Çağrı Merkezi
+  const canEditDetails = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi'].includes(normalizedRole);
+
+  // İş Emri Silme Yetkisi: Sadece Müdür ve Mühendis-Yönetici (Mühendis silebilir kuralına göre)
+  const canDeleteJob = ['Müdür', 'Mühendis-Yönetici'].includes(normalizedRole);
 
   const fetchData = useCallback(async () => {
     const { data: ihbarData } = await supabase.from('ihbarlar').select(`
@@ -123,6 +136,28 @@ export default function IhbarDetay() {
     setLoading(false)
   }
 
+  const isiGeriAl = async () => {
+    if (!window.confirm("Bu işi personelden geri alıp havuza (Bekleyenlere) göndermek istediğinize emin misiniz?")) return;
+    setLoading(true);
+    const { error } = await supabase.from('ihbarlar').update({ 
+        atanan_personel: null, 
+        atanan_grup_id: null, 
+        durum: 'Beklemede' 
+      }).eq('id', id);
+
+    if (!error) { alert("İş geri alındı ve havuza gönderildi."); fetchData(); }
+    setLoading(false);
+  };
+
+  const isiSil = async () => {
+    if (!window.confirm("DİKKAT! Bu iş emri kalıcı olarak silinecektir. Onaylıyor musunuz?")) return;
+    setLoading(true);
+    const { error } = await supabase.from('ihbarlar').delete().eq('id', id);
+    if (!error) { alert("İş emri silindi."); router.push('/dashboard'); }
+    else { alert("Hata: " + error.message); }
+    setLoading(false);
+  };
+
   const malzemeEkle = async () => {
     if (!secilenMalzeme || miktar <= 0) return alert('Malzeme ve miktar seçin!')
     const { error } = await supabase.from('ihbar_malzemeleri').insert([{
@@ -131,21 +166,11 @@ export default function IhbarDetay() {
     if (!error) { setMiktar(0); setSecilenMalzeme(null); setSearchTerm(''); fetchData(); }
   }
 
-  // --- İŞİ DURAKLATMA (MALZEME BEKLEME) ---
   const isiDuraklat = async () => {
-    if (!personelNotu) return alert("Lütfen neden durdurulduğunu (eksik malzemeyi vb.) not kısmına yazın.");
+    if (!personelNotu) return alert("Lütfen neden durdurulduğunu yazın.");
     setLoading(true);
-    const { error } = await supabase.from('ihbarlar').update({ 
-      durum: 'Durduruldu', 
-      personel_notu: personelNotu 
-    }).eq('id', id);
-
-    if (!error) { 
-        alert("İş 'Durduruldu' olarak işaretlendi."); 
-        await fetchData(); 
-    } else {
-        alert("Hata oluştu: " + error.message);
-    }
+    const { error } = await supabase.from('ihbarlar').update({ durum: 'Durduruldu', personel_notu: personelNotu }).eq('id', id);
+    if (!error) { alert("İş Durduruldu."); fetchData(); }
     setLoading(false);
   }
 
@@ -171,14 +196,17 @@ export default function IhbarDetay() {
         {/* ÜST BAR */}
         <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <button onClick={() => router.push('/dashboard')} className="text-blue-900 font-black text-[10px] md:text-xs uppercase italic flex items-center gap-2">← GERİ</button>
-          <div className="text-[10px] font-bold text-gray-400 uppercase italic tracking-widest">
-            {ihbar.ifs_is_emri_no ? `#${ihbar.ifs_is_emri_no}` : 'IFS YOK'}
+          <div className="flex items-center gap-4">
+             {canDeleteJob && (
+                <button onClick={isiSil} className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-[10px] font-black border border-red-100 hover:bg-red-600 hover:text-white transition-all">🗑️ İŞİ SİL</button>
+             )}
+             <div className="text-[10px] font-bold text-gray-400 uppercase italic tracking-widest">
+               {ihbar.ifs_is_emri_no ? `#${ihbar.ifs_is_emri_no}` : 'IFS YOK'}
+             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8">
-          
-          {/* SOL TARAF: İŞ BİLGİLERİ */}
           <div className="lg:col-span-2 space-y-4 md:space-y-6 order-2 lg:order-1">
             <div className="bg-white p-5 md:p-8 rounded-[1.5rem] md:rounded-[2.5rem] shadow-xl border-b-8 border-blue-900 relative overflow-hidden">
               <div className="flex justify-between items-start mb-4">
@@ -205,7 +233,12 @@ export default function IhbarDetay() {
                 </div>
               ) : (
                 <div className="bg-gray-50 p-4 md:p-6 rounded-2xl md:rounded-3xl border-2 border-dashed border-gray-200 mb-6">
-                  <p className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">📋 AÇIKLAMA</p>
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-[8px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">📋 AÇIKLAMA</p>
+                    {canEditDetails && (
+                      <button onClick={() => setEditMode(true)} className="text-[8px] font-black text-blue-600 uppercase italic">✏️ İHBARI GÜNCELLE</button>
+                    )}
+                  </div>
                   <p className="text-gray-700 font-medium italic text-base md:text-lg leading-relaxed">{ihbar.aciklama || 'Detay girilmemiş'}</p>
                 </div>
               )}
@@ -218,7 +251,7 @@ export default function IhbarDetay() {
                     {ihbar.yardimcilar.map((y: string, idx: number) => (
                       <span key={idx} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-[9px] font-black border border-blue-100 flex items-center gap-2">
                         👤 {y}
-                        {(ihbar.durum === 'Calisiliyor' || ihbar.durum === 'Durduruldu') && (
+                        {!isSaha && (ihbar.durum === 'Calisiliyor' || ihbar.durum === 'Durduruldu') && (
                           <button onClick={() => yardimciSil(y)} className="text-red-500 font-black hover:scale-125 transition-transform ml-1">×</button>
                         )}
                       </span>
@@ -227,13 +260,10 @@ export default function IhbarDetay() {
                 </div>
               )}
 
-              {/* MALZEME TABLOSU (Mobilde Kaydırılabilir) */}
+              {/* MALZEME TABLOSU */}
               <div className="mt-6 border-t pt-6 overflow-x-auto">
                 <div className="flex justify-between items-center mb-4 min-w-[300px]">
                   <h3 className="font-black text-[10px] md:text-xs text-gray-400 uppercase tracking-widest">📦 MALZEMELER</h3>
-                  <button onClick={() => setEditMode(!editMode)} className="text-[8px] md:text-[10px] font-black uppercase text-blue-600 hover:underline">
-                    {editMode ? '❌ İPTAL' : '✏️ DÜZENLE'}
-                  </button>
                 </div>
                 <table className="w-full text-left min-w-[300px]">
                   <thead className="bg-gray-50 text-[8px] md:text-[10px] font-black uppercase text-gray-400 border-b">
@@ -255,20 +285,22 @@ export default function IhbarDetay() {
             </div>
           </div>
 
-          {/* SAĞ TARAF: İŞLEM PANELİ */}
           <div className="space-y-4 md:space-y-6 order-1 lg:order-2">
-            
-            {/* ATAMA PANELİ (Mobilde Daraltıldı) */}
             {canEditAssignment && (
               <div className="bg-white p-5 md:p-6 rounded-[1.5rem] md:rounded-[2.5rem] shadow-xl border-t-8 border-orange-500">
                 <h3 className="font-black text-xs uppercase text-orange-600 mb-4 italic">SORUMLU ATAMA</h3>
+                {(ihbar.atanan_personel || ihbar.atanan_grup_id) && !isSaha && (
+                  <button onClick={isiGeriAl} className="w-full mb-4 bg-red-50 text-red-600 p-3 rounded-xl font-black text-[9px] uppercase border border-red-100 hover:bg-red-100 transition-all shadow-sm">
+                    🚫 İŞİ GERİ AL (HAVUZA AT)
+                  </button>
+                )}
                 {isFormen && (ihbar.durum === 'Beklemede' || ihbar.durum === 'Islemde') && (
                   <button onClick={handleUstenle} className="w-full bg-blue-600 text-white p-3 md:p-4 rounded-xl font-black text-[10px] uppercase shadow-lg mb-4">🚀 ÜZERİME AL</button>
                 )}
                 <div className="space-y-2">
                   <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
-                    <button onClick={() => setAtamaTuru('personel')} className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase ${atamaTuru === 'personel' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}>KİŞİ</button>
-                    <button onClick={() => setAtamaTuru('grup')} className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase ${atamaTuru === 'grup' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-400'}`}>GRUP</button>
+                    <button onClick={() => setAtamaTuru('personel')} className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase ${atamaTuru === 'personel' ? 'bg-white text-blue-600' : 'text-gray-400'}`}>KİŞİ</button>
+                    <button onClick={() => setAtamaTuru('grup')} className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase ${atamaTuru === 'grup' ? 'bg-white text-orange-600' : 'text-gray-400'}`}>GRUP</button>
                   </div>
                   <input placeholder="IFS NO" className="w-full p-3 bg-blue-50 border border-blue-100 rounded-xl font-black text-[10px] uppercase" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
                   <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-3 bg-gray-50 border rounded-xl font-bold text-[10px] uppercase">
@@ -280,30 +312,24 @@ export default function IhbarDetay() {
               </div>
             )}
 
-            {/* SAHA İŞLEMLERİ PANELİ */}
             <div className="bg-white p-5 md:p-6 rounded-[1.5rem] md:rounded-[2.5rem] shadow-xl border-2 border-blue-600">
-              <h3 className="font-black text-base md:text-xl mb-4 md:mb-6 text-blue-900 italic uppercase">SAHA İŞLEMLERİ</h3>
-              
+              <h3 className="font-black text-base md:text-xl mb-4 text-blue-900 italic uppercase">SAHA İŞLEMLERİ</h3>
               {ihbar.durum === 'Islemde' || ihbar.durum === 'Beklemede' ? (
                 <button onClick={isiBaslat} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black shadow-xl animate-pulse uppercase italic text-xs">🛠️ İŞİ ŞİMDİ BAŞLAT</button>
               ) : ihbar.durum === 'Durduruldu' ? (
-                <button onClick={isiBaslat} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-xl animate-bounce uppercase italic text-xs">🔧 MALZEME GELDİ / DEVAM ET</button>
+                <button onClick={isiBaslat} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black shadow-xl animate-bounce uppercase italic text-xs">🔧 DEVAM ET</button>
               ) : ihbar.durum === 'Calisiliyor' ? (
                 <div className="space-y-4">
-                  
-                  {/* EKİP ARKADAŞI EKLEME */}
                   <div className="p-3 bg-blue-50 rounded-2xl border-2 border-dashed border-blue-200">
                     <p className="text-[8px] font-black text-blue-600 uppercase mb-2 italic">🤝 EKİP ARKADAŞI</p>
                     <div className="flex gap-1">
                       <select value={seciliYardimci} onChange={e=>setSeciliYardimci(e.target.value)} className="flex-1 p-2 bg-white border rounded-xl font-black text-[9px] uppercase">
-                        <option value="">PERSONEL SEÇ...</option>
+                        <option value="">SEÇ...</option>
                         {personeller.filter(p => p.id !== userId).map(p => <option key={p.id} value={p.full_name}>{p.full_name}</option>)}
                       </select>
                       <button onClick={yardimciEkle} className="bg-blue-600 text-white px-3 py-2 rounded-xl font-black text-[9px]">EKLE</button>
                     </div>
                   </div>
-
-                  {/* MALZEME ARAMA */}
                   <div className="relative">
                     <input type="text" placeholder="🔍 MALZEME ARA..." className="w-full p-3 border rounded-xl font-bold text-[10px] bg-gray-50" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
                     {searchTerm && (
@@ -317,7 +343,6 @@ export default function IhbarDetay() {
                       </div>
                     )}
                   </div>
-
                   {secilenMalzeme && (
                     <div className="flex items-center gap-1 p-2 bg-emerald-50 text-emerald-900 rounded-xl border border-emerald-100">
                       <span className="text-[8px] font-black uppercase flex-1 truncate">✅ {secilenMalzeme.malzeme_adi}</span>
@@ -325,18 +350,14 @@ export default function IhbarDetay() {
                       <button onClick={malzemeEkle} className="bg-emerald-600 text-white p-2 rounded-lg font-black text-[8px]">EKLE</button>
                     </div>
                   )}
-
                   <div className="space-y-1">
                     <p className="text-[8px] font-black text-gray-400 uppercase italic">İŞLEM / DURDURMA NOTU (ZORUNLU)</p>
-                    <textarea className="w-full p-3 border rounded-xl bg-gray-50 text-[11px] font-bold" placeholder="Eksik malzemeyi veya yapılanı yazın..." rows={3} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
+                    <textarea className="w-full p-3 border rounded-xl bg-gray-50 text-[11px] font-bold" placeholder="Detay yazın..." rows={3} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
                   </div>
-                  
-                  {/* AKSİYON BUTONLARI (MOBİLDE DİKEY SIRALAMA) */}
                   <div className="flex flex-col gap-3 pt-2">
-                    <button onClick={isiTamamla} className="w-full bg-green-600 text-white py-5 rounded-2xl font-black shadow-xl uppercase italic text-[11px] border-b-4 border-green-800">🏁 İŞİ TAMAMLA VE KAPAT</button>
-                    <button onClick={isiDuraklat} className="w-full bg-orange-500 text-white py-4 rounded-2xl font-black shadow-lg uppercase italic text-[10px] border-b-4 border-orange-700 active:scale-95 transition-all">⚠️ MALZEME BEKLİYOR / DURDUR</button>
+                    <button onClick={isiTamamla} className="w-full bg-green-600 text-white py-5 rounded-2xl font-black shadow-xl uppercase italic text-[11px] border-b-4 border-green-800">🏁 İŞİ BİTİR</button>
+                    <button onClick={isiDuraklat} className="w-full bg-orange-500 text-white py-4 rounded-2xl font-black shadow-lg uppercase italic text-[10px] border-b-4 border-orange-700 active:scale-95 transition-all">⚠️ DURDUR</button>
                   </div>
-
                 </div>
               ) : (
                 <div className="text-center p-8 bg-gray-50 rounded-[2rem] border-4 border-dashed border-gray-100">
