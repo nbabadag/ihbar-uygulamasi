@@ -18,11 +18,15 @@ export default function KullaniciDenetimMerkezi() {
   const [phone, setPhone] = useState('')
   const [role, setRole] = useState('Saha Personeli')
 
-  // YETKİ KONTROLLERİ (Client-side)
+  // --- YETKİ KONTROLLERİ (HİYERARŞİ GÜNCELLENDİ) ---
+  const isAdmin = currentUserRole === 'Admin' // Admin Yetkisi Eklendi
   const isManager = currentUserRole === 'Müdür'
   const isEngineer = currentUserRole === 'Mühendis-Yönetici'
-  const canDelete = isManager // Sadece Müdür silebilir
-  const canManage = isManager || isEngineer // Müdür ve Mühendis-Yönetici ekleme/güncelleme yapabilir
+  
+  // Sadece Admin ve Müdür silebilir
+  const canDelete = isAdmin || isManager 
+  // Admin, Müdür ve Mühendis-Yönetici personel ekleyebilir/düzenleyebilir
+  const canManage = isAdmin || isManager || isEngineer 
 
   // KULLANICILARI VE OTURUMU ÇEK
   const fetchData = useCallback(async () => {
@@ -35,7 +39,7 @@ export default function KullaniciDenetimMerkezi() {
       setCurrentUserRole(profile?.role || '')
     }
 
-    // 2. Tüm Personeli Çek (View üzerinden)
+    // 2. Tüm Personeli Çek (View üzerinden e-posta dahil)
     const { data, error } = await supabase
       .from('personel_listesi') 
       .select('*')
@@ -50,7 +54,7 @@ export default function KullaniciDenetimMerkezi() {
   // YENİ KAYIT
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!canManage) return alert("Bu işlem için yetkiniz yok.")
+    if (!canManage) return alert("Yeni personel ekleme yetkiniz yok.")
     
     setLoading(true)
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -99,13 +103,7 @@ export default function KullaniciDenetimMerkezi() {
       return alert(profileError.message)
     }
 
-    // Şifre Yenileme (E-posta ile güvenli sıfırlama önerilir)
-    if (editingUser.newPassword && editingUser.newPassword.length >= 6) {
-       alert("Profil güncellendi. Şifre değişikliği güvenlik politikaları gereği e-posta üzerinden veya Supabase Panelinden yapılmalıdır.")
-    } else {
-      alert("Personel bilgileri güncellendi.")
-    }
-
+    alert("Personel bilgileri güncellendi.")
     setEditingUser(null)
     fetchData()
     setLoading(false)
@@ -118,7 +116,7 @@ export default function KullaniciDenetimMerkezi() {
   }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!canDelete) return alert("Personel silme yetkisi sadece Müdür rolüne aittir.")
+    if (!canDelete) return alert("Bu işlem için Admin veya Müdür yetkisi gereklidir.")
     if (confirm(`${name} personeli sistemden tamamen silinecek? Bu işlem geri alınamaz.`)) {
       await supabase.from('profiles').delete().eq('id', id)
       fetchData()
@@ -130,8 +128,8 @@ export default function KullaniciDenetimMerkezi() {
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-2xl font-black text-blue-900 uppercase italic tracking-tighter">Kullanıcı Denetim Merkezi</h1>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Yönetim ve Yetkilendirme Paneli</p>
+            <h1 className="text-2xl font-black text-blue-900 uppercase italic tracking-tighter leading-none">Kullanıcı Denetim Merkezi</h1>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Sistem Yetkilendirme ve Personel Yönetimi</p>
           </div>
           <button onClick={() => router.push('/dashboard')} className="group flex items-center gap-2 bg-white border-2 border-blue-900 text-blue-900 px-5 py-2 rounded-2xl font-black text-xs hover:bg-blue-900 hover:text-white transition-all shadow-sm">
             <span className="text-lg group-hover:-translate-x-1 transition-transform">←</span> GERİ DÖN
@@ -153,6 +151,7 @@ export default function KullaniciDenetimMerkezi() {
                   <option value="Çağrı Merkezi">Çağrı Merkezi</option>
                   <option value="Mühendis-Yönetici">Mühendis-Yönetici</option>
                   <option value="Müdür">Müdür</option>
+                  <option value="Admin">Admin</option>
                 </select>
                 <button disabled={loading} className="w-full bg-blue-600 text-white p-4 rounded-2xl font-black uppercase text-xs shadow-lg hover:bg-blue-700 active:scale-95 transition-all italic">
                   {loading ? 'İŞLEM YAPILIYOR...' : 'SİSTEME KAYDET'}
@@ -160,7 +159,7 @@ export default function KullaniciDenetimMerkezi() {
               </form>
             ) : (
               <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-[10px] font-bold uppercase italic border border-red-100">
-                ⚠️ Yeni personel ekleme yetkiniz bulunmamaktadır.
+                ⚠️ Personel ekleme yetkiniz bulunmamaktadır.
               </div>
             )}
           </div>
@@ -231,6 +230,7 @@ export default function KullaniciDenetimMerkezi() {
                   <option value="Çağrı Merkezi">Çağrı Merkezi</option>
                   <option value="Mühendis-Yönetici">Mühendis-Yönetici</option>
                   <option value="Müdür">Müdür</option>
+                  <option value="Admin">Admin</option>
                 </select>
               </div>
               <div className="flex gap-3 pt-6">

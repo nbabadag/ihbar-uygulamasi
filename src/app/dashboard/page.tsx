@@ -13,18 +13,18 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
 
-  // --- YETKİ KONTROLLERİ (Yeni Kurallara Göre) ---
+  // --- YETKİ KONTROLLERİ (ADMIN TAM YETKİ EKLENDİ) ---
   const normalizedRole = userRole?.trim() || '';
   
   // 1. Menü Görünürlükleri
-  const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
-  const canManageUsers = ['Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
-  const canSeeReports = ['Formen', 'Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
-  const canSeeTV = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi'].includes(normalizedRole);
-  const canManageGroups = ['Formen', 'Mühendis-Yönetici', 'Müdür'].includes(normalizedRole);
+  const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
+  const canManageUsers = ['Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
+  const canSeeReports = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
+  const canSeeTV = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi', 'Admin'].includes(normalizedRole);
+  const canManageGroups = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
 
   // 2. Sütun ve Havuz Görme Yetkisi
-  const seePool = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi'].includes(normalizedRole);
+  const seePool = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi', 'Admin'].includes(normalizedRole);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000)
@@ -41,16 +41,16 @@ export default function DashboardPage() {
     
     let query = supabase.from('ihbarlar').select(`*, profiles (full_name), calisma_gruplari (grup_adi)`)
     
-    // --- QUERY LOGIC (Nusret'in Kuralları) ---
+    // --- QUERY LOGIC (ADMIN VE MÜDÜR İÇİN FİLTRESİZ ÇEKİM) ---
     if (role === 'Saha Personeli') {
-      // Sadece kendine atananları gör (Havuz kapalı)
+      // Sadece kendine atananları gör
       query = query.eq('atanan_personel', id)
     } 
     else if (role === 'Formen') {
-      // Kendi işlerini + Havuzdakileri (Atanmamışları) gör
+      // Kendi işlerini + Havuzdakileri gör
       query = query.or(`atanan_personel.is.null,atanan_personel.eq.${id}`)
     }
-    // Mühendis ve Müdür her şeyi görür (Filtre ekleme)
+    // Admin, Müdür ve Mühendis her şeyi görür (Ekstra filtre uygulanmaz)
 
     const { data: ihbarData } = await query.order('created_at', { ascending: false })
     
@@ -62,7 +62,7 @@ export default function DashboardPage() {
         tamamlanan: ihbarData.filter(i => i.durum === 'Tamamlandi').length
       })
 
-      // Gecikme Alarmı (Sadece görmeye yetkili olanlar için çalsın)
+      // Gecikme Alarmı
       if (seePool) {
         const hasDelayedJob = ihbarData.some(i => {
           if (i.durum !== 'Beklemede') return false
@@ -125,7 +125,7 @@ export default function DashboardPage() {
         <div className="flex justify-between items-start mb-1">
           <div className="flex flex-col">
             <span className={`text-[10px] font-black italic ${isDelayed ? 'text-red-200' : 'text-blue-500'}`}>
-               #{ihbar.ifs_is_emri_no || 'IFS YOK'}
+                #{ihbar.ifs_is_emri_no || 'IFS YOK'}
             </span>
             <div className={`font-black text-[12px] uppercase leading-tight tracking-tighter ${isDelayed ? 'text-white' : 'text-gray-800'}`}>
               {ihbar.musteri_adi}
@@ -153,7 +153,6 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row text-black font-sans">
       
-      {/* 📱 MOBİL HEADER */}
       <div className="md:hidden bg-blue-950 text-white p-4 sticky top-0 z-50 shadow-xl flex justify-between items-center border-b border-blue-800">
         <div className="flex flex-col">
           <h2 className="text-xs font-black italic text-blue-400 leading-none mb-1 uppercase tracking-tighter">Saha 360</h2>
@@ -165,7 +164,6 @@ export default function DashboardPage() {
         <button onClick={handleLogout} className="bg-red-600 p-2.5 rounded-xl text-[10px] font-black uppercase active:scale-90 border-b-2 border-red-800">ÇIKIŞ</button>
       </div>
 
-      {/* 💻 PC SOL MENÜ */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm">
@@ -185,11 +183,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🚀 ANA İÇERİK */}
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           
-          {/* AÇIK İHBARLAR (HAVUZ) */}
           {seePool && (
             <div className="flex flex-col bg-yellow-50/50 rounded-[2rem] border-2 border-yellow-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)]">
               <div className="p-4 bg-yellow-400 text-yellow-900 flex justify-between items-center shadow-md">
@@ -206,7 +202,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* İŞLEMDE OLANLAR / DURDURULANLAR */}
           <div className={`flex flex-col bg-blue-50/50 rounded-[2rem] border-2 border-blue-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)] ${!seePool ? 'lg:col-span-2' : ''}`}>
             <div className="p-4 bg-blue-600 text-white flex justify-between items-center shadow-md">
               <h3 className="text-[11px] font-black uppercase italic tracking-tighter">🔵 İşlemde / Durdu</h3>
@@ -221,7 +216,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* TAMAMLANANLAR */}
           <div className="flex flex-col bg-green-50/50 rounded-[2rem] border-2 border-green-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)]">
             <div className="p-4 bg-green-600 text-white flex justify-between items-center shadow-md">
               <h3 className="text-[11px] font-black uppercase italic tracking-tighter">🟢 Tamamlananlar</h3>
