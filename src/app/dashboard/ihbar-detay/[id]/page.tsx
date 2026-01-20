@@ -31,7 +31,7 @@ export default function IhbarDetay() {
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState({ musteri_adi: '', konu: '', aciklama: '' })
 
-  // --- YENİ: KONUM AYARLARI ---
+  // --- KONUM AYARLARI ---
   const [konumModu, setKonumModu] = useState('muhurleme')
 
   // --- YETKİ KONTROLLERİ ---
@@ -54,7 +54,7 @@ export default function IhbarDetay() {
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
         () => resolve("Konum Alınamadı"),
-        { enableHighAccuracy: true, timeout: 5000 }
+        { enableHighAccuracy: true, timeout: 8000 }
       );
     });
   };
@@ -94,14 +94,13 @@ export default function IhbarDetay() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // --- YENİ: CANLI TAKİP MOTORU ---
+  // --- CANLI TAKİP MOTORU ---
   useEffect(() => {
     let interval: any;
     if (konumModu === 'canli_takip' && ihbar?.durum === 'Calisiliyor') {
       interval = setInterval(async () => {
         const currentPos = await getGPSLocation();
         await supabase.from('ihbarlar').update({ guncel_konum: currentPos }).eq('id', id);
-        console.log("📍 Canlı Konum Mühürlendi:", currentPos);
       }, 300000); // 5 Dakikada Bir
     }
     return () => clearInterval(interval);
@@ -136,7 +135,7 @@ export default function IhbarDetay() {
 
   const handleUstenle = async () => {
     setLoading(true)
-    const konum = await getGPSLocation(); // Üzerine alırken de konumu mühürler
+    const konum = await getGPSLocation();
     const { error } = await supabase.from('ihbarlar').update({
       atanan_personel: userId,
       atanan_grup_id: null,
@@ -378,7 +377,7 @@ export default function IhbarDetay() {
                   <div className="text-center p-8 bg-gray-50 rounded-[2rem] border-4 border-dashed border-gray-100">
                     <p className="text-2xl mb-2">✅ İŞ TAMAMLANDI</p>
                     {ihbar.bitis_konum && (
-                      <a href={`http://googleusercontent.com/maps.google.com/3{ihbar.bitis_konum}`} target="_blank" rel="noreferrer" className="text-[9px] font-black text-blue-600 underline">📍 HARİTADA GÖR</a>
+                      <a href={`https://www.google.com/maps?q=${ihbar.bitis_konum}`} target="_blank" rel="noreferrer" className="text-[9px] font-black text-blue-600 underline">📍 HARİTADA GÖR</a>
                     )}
                   </div>
                 )}
