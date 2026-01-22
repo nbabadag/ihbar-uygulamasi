@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [stats, setStats] = useState({ bekleyen: 0, islemde: 0, tamamlana: 0 })
+  const [stats, setStats] = useState({ bekleyen: 0, islemde: 0, tamamlanan: 0 })
   const [ihbarlar, setIhbarlar] = useState<any[]>([])
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
