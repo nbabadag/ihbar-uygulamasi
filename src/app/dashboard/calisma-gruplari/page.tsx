@@ -14,31 +14,23 @@ export default function CalismaGruplariPage() {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  // --- YETKİ KONTROLLERİ (ADMIN TAM YETKİ EKLENDİ) ---
   const normalizedRole = userRole?.trim();
-  const isAdmin = normalizedRole === 'Admin'; // Admin eklendi
+  const isAdmin = normalizedRole === 'Admin';
   const isFormen = normalizedRole === 'Formen';
   const isManager = normalizedRole === 'Müdür';
   const isEngineer = normalizedRole === 'Mühendis-Yönetici';
 
-  // Grup oluşturma yetkisi: Admin, Müdür ve Mühendis
   const canCreateGroup = isAdmin || isManager || isEngineer;
-  // Üye ekleme/çıkarma yetkisi: Admin, Formen, Mühendis ve Müdür
   const canManageMembers = isAdmin || isFormen || isEngineer || isManager;
-  // Sayfayı görme yetkisi: Admin, Formen, Mühendis, Müdür
-  const canAccessPage = isAdmin || isFormen || isEngineer || isManager;
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    
-    // 1. Kullanıcı Rolünü Kontrol Et
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
       const role = profile?.role || 'Saha Personeli'
       setUserRole(role)
       
-      // Sayfaya erişim yetkisi yoksa geri gönder
       if (!['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(role)) {
         router.push('/dashboard')
         return
@@ -70,25 +62,21 @@ export default function CalismaGruplariPage() {
 
   const grupEkle = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!canCreateGroup) return alert("Yeni grup oluşturma yetkisi sadece Admin, Müdür ve Mühendis rollerine aittir.")
+    if (!canCreateGroup) return alert("Yetki kısıtlı.")
     if (!yeniGrupAdi) return
     await supabase.from('calisma_gruplari').insert([{ grup_adi: yeniGrupAdi }])
     setYeniGrupAdi(''); fetchData()
   }
 
   const grupSil = async (id: string, ad: string) => {
-    if (!isAdmin && !isManager) return alert("Grup silme yetkisi sadece Admin ve Müdür rollerine aittir.");
-    if (!window.confirm(`${ad} grubu ve tüm üyelikleri silinecek. Onaylıyor musunuz?`)) return;
-    
+    if (!isAdmin && !isManager) return alert("Yetki kısıtlı.");
+    if (!window.confirm(`${ad} silinecek?`)) return;
     const { error } = await supabase.from('calisma_gruplari').delete().eq('id', id);
-    if (!error) {
-      setSeciliGrup(null);
-      fetchData();
-    }
+    if (!error) { setSeciliGrup(null); fetchData(); }
   }
 
   const uyeEkle = async (profilId: string) => {
-    if (!canManageMembers) return alert("Grup üyesi yönetme yetkiniz yok.")
+    if (!canManageMembers) return alert("Yetki kısıtlı.")
     if (!seciliGrup) return
     const { error } = await supabase.from('grup_uyeleri').insert([{ grup_id: seciliGrup.id, profil_id: profilId }])
     if (error) alert("Bu personel zaten grupta.")
@@ -96,51 +84,72 @@ export default function CalismaGruplariPage() {
   }
 
   const uyeSil = async (profilId: string) => {
-    if (!canManageMembers) return alert("Grup üyesi yönetme yetkiniz yok.")
-    if (!window.confirm("Personel gruptan çıkarılacak. Onaylıyor musunuz?")) return
+    if (!canManageMembers) return alert("Yetki kısıtlı.")
+    if (!window.confirm("Çıkarılsın mı?")) return
     await supabase.from('grup_uyeleri').delete().eq('grup_id', seciliGrup.id).eq('profil_id', profilId)
     fetchGrupUyeleri(seciliGrup.id)
   }
 
-  if (loading) return <div className="p-10 text-center font-black uppercase italic text-black">Sistem Yetkileri Kontrol Ediliyor...</div>
+  if (loading) return <div className="p-10 text-center font-black uppercase italic text-white bg-[#0a0b0e] min-h-screen">Yetkiler Kontrol Ediliyor...</div>
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-black font-sans">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+    <div className="min-h-screen flex flex-col text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
+      
+      {/* 🖼️ KURUMSAL ARKA PLAN (MÜHÜR) */}
+      <div 
+        className="fixed inset-0 z-0 opacity-20 pointer-events-none"
+        style={{
+          backgroundImage: "url('/logo.png')",
+          backgroundSize: '80%',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          filter: 'brightness(0.5) contrast(1.2) grayscale(0.5)'
+        }}
+      ></div>
+
+      <div className="p-4 md:p-8 max-w-7xl mx-auto w-full relative z-10 space-y-6">
+        
+        {/* 🏛️ ÜST BAR */}
+        <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-5 rounded-3xl border border-gray-800 shadow-2xl">
           <div>
-            <h1 className="text-2xl font-black uppercase italic text-blue-900 tracking-tighter leading-none">Çalışma Grupları & Ekip Yönetimi</h1>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1 text-black">Grup ve Personel Atama Paneli</p>
+            <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none drop-shadow-[0_0_10px_rgba(249,115,22,0.3)]">Ekip Yönetimi</h1>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-1 italic">Sefine Shipyard // Çalışma Grupları</p>
           </div>
-          <button onClick={() => router.push('/dashboard')} className="bg-blue-900 text-white px-6 py-2 rounded-xl text-xs font-bold uppercase shadow-lg active:scale-95 transition-all">← Panele Dön</button>
+          <button 
+            onClick={() => router.push('/dashboard')} 
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/30"
+          >
+            <span className="text-sm">←</span> GERİ DÖN
+          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
+          {/* SOL PANEL: GRUP LİSTESİ VE OLUŞTURMA */}
           <div className="lg:col-span-1 space-y-6">
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-              <h2 className="font-black mb-4 text-sm uppercase text-gray-400 italic">Yeni Grup Kur</h2>
+            <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] border border-gray-800 shadow-2xl">
+              <h2 className="font-black mb-4 text-orange-500 uppercase text-[9px] italic tracking-widest border-b border-gray-800 pb-2 font-black">Yeni Grup Tanımla</h2>
               {canCreateGroup ? (
-                <form onSubmit={grupEkle} className="flex gap-2">
-                  <input type="text" value={yeniGrupAdi} onChange={e => setYeniGrupAdi(e.target.value)} placeholder="Grup Adı..." className="flex-1 p-3 bg-gray-50 border rounded-xl font-bold text-sm outline-none focus:border-blue-500 text-black" />
-                  <button className="bg-blue-600 text-white px-4 rounded-xl font-black uppercase text-[10px]">EKLE</button>
+                <form onSubmit={grupEkle} className="flex flex-col gap-3 font-black">
+                  <input type="text" value={yeniGrupAdi} onChange={e => setYeniGrupAdi(e.target.value)} placeholder="Örn: Elektrik Bakım..." className="p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 transition-all font-black" />
+                  <button className="bg-orange-600 hover:bg-orange-700 text-white p-4 rounded-2xl font-black uppercase text-[10px] shadow-xl italic tracking-widest font-black transition-all">Grup Kur 🚀</button>
                 </form>
               ) : (
-                <p className="text-[10px] font-bold text-red-500 bg-red-50 p-3 rounded-xl border border-red-100 uppercase italic">⚠️ Grup oluşturma yetkiniz bulunmamaktadır.</p>
+                <p className="text-[10px] font-black text-red-500 bg-red-900/10 p-3 rounded-xl border border-red-900/30 uppercase italic font-black">⚠️ Yetki Sınırı.</p>
               )}
             </div>
 
-            <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b font-black text-[10px] uppercase text-gray-400">Mevcut Gruplar</div>
-              <div className="divide-y max-h-[400px] overflow-y-auto">
+            <div className="bg-[#1a1c23]/90 backdrop-blur-lg rounded-[2.5rem] border border-gray-800 shadow-2xl overflow-hidden font-black">
+              <div className="p-4 bg-black/40 border-b border-gray-800 font-black text-[9px] uppercase text-gray-500 italic font-black">Kayıtlı Gruplar</div>
+              <div className="divide-y divide-gray-800 max-h-[400px] overflow-y-auto custom-scrollbar font-black">
                 {gruplar.map(g => (
-                  <div key={g.id} onClick={() => grupSec(g)} className={`p-4 cursor-pointer transition-all flex justify-between items-center ${seciliGrup?.id === g.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}>
-                    <span className="font-bold text-sm text-gray-800 uppercase italic">{g.grup_adi}</span>
-                    <div className="flex items-center gap-2">
+                  <div key={g.id} onClick={() => grupSec(g)} className={`p-4 cursor-pointer transition-all flex justify-between items-center group ${seciliGrup?.id === g.id ? 'bg-orange-600/10 border-l-4 border-orange-600' : 'hover:bg-white/5'}`}>
+                    <span className="font-black text-xs text-white uppercase italic tracking-tighter">{g.grup_adi}</span>
+                    <div className="flex items-center gap-3">
                       {(isAdmin || isManager) && (
-                        <button onClick={(e) => { e.stopPropagation(); grupSil(g.id, g.grup_adi); }} className="text-red-400 hover:text-red-600 p-1">🗑️</button>
+                        <button onClick={(e) => { e.stopPropagation(); grupSil(g.id, g.grup_adi); }} className="text-gray-600 hover:text-red-500 transition-colors">🗑️</button>
                       )}
-                      <span className="text-[10px] font-black text-blue-600">→</span>
+                      <span className="text-orange-500 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
                     </div>
                   </div>
                 ))}
@@ -148,45 +157,48 @@ export default function CalismaGruplariPage() {
             </div>
           </div>
 
+          {/* SAĞ PANEL: ÜYE YÖNETİMİ */}
           <div className="lg:col-span-2">
             {seciliGrup ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-black">
                 
-                <div className="bg-white rounded-[2rem] shadow-xl border border-blue-100 overflow-hidden">
-                  <div className="p-6 bg-blue-900 text-white">
-                    <h2 className="text-xl font-black uppercase italic">{seciliGrup.grup_adi}</h2>
-                    <p className="text-[10px] opacity-70 font-bold uppercase tracking-widest">Kayıtlı Ekip Üyeleri</p>
+                {/* GRUP ÜYELERİ */}
+                <div className="bg-[#1a1c23]/95 backdrop-blur-lg rounded-[2.5rem] shadow-2xl border border-gray-800 overflow-hidden font-black">
+                  <div className="p-6 bg-orange-600 shadow-xl shadow-orange-900/20 font-black">
+                    <h2 className="text-xl font-black uppercase italic text-white drop-shadow-md">{seciliGrup.grup_adi}</h2>
+                    <p className="text-[9px] opacity-80 font-black uppercase tracking-widest text-white italic">Aktif Ekip Kadrosu</p>
                   </div>
-                  <div className="p-4 space-y-3 min-h-[300px]">
-                    {grupUyeleri.length === 0 && <p className="text-center text-gray-400 font-bold py-10">Bu grupta henüz kimse yok.</p>}
+                  <div className="p-4 space-y-3 min-h-[300px] max-h-[500px] overflow-y-auto custom-scrollbar font-black">
+                    {grupUyeleri.length === 0 && <p className="text-center text-gray-600 font-black uppercase italic py-10 text-[10px]">Grupta henüz üye bulunmuyor.</p>}
                     {grupUyeleri.map(u => (
-                      <div key={u.profil_id} className="flex justify-between items-center bg-blue-50 p-3 rounded-2xl border border-blue-100 text-black">
+                      <div key={u.profil_id} className="flex justify-between items-center bg-black/30 p-4 rounded-2xl border border-gray-800 group hover:border-gray-600 transition-all font-black">
                         <div>
-                          <p className="font-black text-xs text-blue-900 uppercase">{u.profiles.full_name}</p>
-                          <p className="text-[9px] font-bold text-blue-400 uppercase italic">{u.profiles.role}</p>
+                          <p className="font-black text-xs text-white uppercase tracking-tighter italic">{u.profiles.full_name}</p>
+                          <p className="text-[9px] font-black text-orange-500 uppercase italic tracking-widest">{u.profiles.role}</p>
                         </div>
                         {canManageMembers && (
-                          <button onClick={() => uyeSil(u.profil_id)} className="text-[9px] font-black text-red-500 hover:text-red-700 uppercase bg-white px-3 py-1 rounded-lg border border-red-100 active:scale-95 transition-all">Çıkar</button>
+                          <button onClick={() => uyeSil(u.profil_id)} className="text-[8px] font-black text-red-500 hover:text-white hover:bg-red-600 uppercase bg-red-900/10 px-3 py-2 rounded-xl border border-red-900/20 transition-all font-black">Çıkar</button>
                         )}
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="p-6 border-b bg-gray-50">
-                    <h2 className="font-black uppercase text-sm text-gray-800 italic">Personel Ekle</h2>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase">Gruba dahil etmek için seçin</p>
+                {/* PERSONEL HAVUZU */}
+                <div className="bg-[#1a1c23]/80 backdrop-blur-lg rounded-[2.5rem] border border-gray-800 shadow-2xl overflow-hidden font-black">
+                  <div className="p-6 border-b border-gray-800 bg-black/40 font-black">
+                    <h2 className="font-black uppercase text-xs text-blue-400 italic font-black">Kadro Ekle</h2>
+                    <p className="text-[9px] text-gray-500 font-black uppercase italic">Sefine Personel Havuzu</p>
                   </div>
-                  <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto">
+                  <div className="p-4 space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar font-black">
                     {personeller.map(p => (
-                      <div key={p.id} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-xl border border-transparent hover:border-gray-200 transition-all text-black">
+                      <div key={p.id} className="flex justify-between items-center p-4 hover:bg-white/5 rounded-2xl border border-transparent hover:border-gray-800 transition-all font-black">
                         <div>
-                          <p className="font-bold text-xs text-gray-700 uppercase">{p.full_name}</p>
-                          <p className="text-[9px] font-medium text-gray-400 uppercase italic">{p.role}</p>
+                          <p className="font-black text-xs text-gray-200 uppercase italic tracking-tighter">{p.full_name}</p>
+                          <p className="text-[9px] font-black text-blue-500 uppercase italic">{p.role}</p>
                         </div>
                         {canManageMembers && (
-                          <button onClick={() => uyeEkle(p.id)} className="text-[10px] font-black text-green-600 bg-green-50 px-3 py-1 rounded-lg hover:bg-green-600 hover:text-white transition-all active:scale-95">EKLE +</button>
+                          <button onClick={() => uyeEkle(p.id)} className="text-[9px] font-black text-white bg-blue-600/20 hover:bg-blue-600 border border-blue-600/30 px-4 py-2 rounded-xl transition-all font-black">EKLE +</button>
                         )}
                       </div>
                     ))}
@@ -195,14 +207,21 @@ export default function CalismaGruplariPage() {
 
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center bg-gray-100 border-4 border-dashed rounded-[2rem] text-gray-400 font-black uppercase italic p-10 text-center">
-                Lütfen yönetmek istediğiniz çalışma grubunu sol taraftan seçin
+              <div className="h-full min-h-[400px] flex flex-col items-center justify-center bg-black/30 border-4 border-dashed border-gray-800/50 rounded-[3rem] text-gray-600 p-10 text-center font-black">
+                <span className="text-5xl mb-4 opacity-20">👥</span>
+                <p className="uppercase italic tracking-widest text-sm opacity-50">Lütfen yönetmek istediğiniz çalışma grubunu sol panelden seçin</p>
               </div>
             )}
           </div>
 
         </div>
       </div>
+
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+      `}</style>
     </div>
   )
 }

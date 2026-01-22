@@ -23,11 +23,15 @@ export default function IhbarDetay() {
   const [seciliAtanan, setSeciliAtanan] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Yetki Kontrolleri
-  const normalizedRole = userRole?.trim();
-  // Havuza geri alma yetkisi: Saha Personeli HARİÇ herkes
-  const canReleaseToPool = normalizedRole !== 'Saha Personeli' && normalizedRole !== '';
-  const canEditAssignment = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin', 'Çağrı Merkezi'].includes(normalizedRole);
+  // --- 🛠️ YETKİ KONTROLÜ DÜZELTİLDİ ---
+  const normalizedRole = userRole?.trim().toUpperCase() || '';
+  const canReleaseToPool = normalizedRole !== 'SAHA PERSONELI' && normalizedRole !== '';
+  
+  // Çağrı Merkezi yetkisi için Türkçe karakter ve I/İ uyumu garantilendi
+  const canEditAssignment = [
+    'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ADMIN', 
+    'ÇAĞRI MERKEZİ', 'CAGRI MERKEZI', 'CAGRI MERKEZİ', 'ÇAĞRI MERKEZI'
+  ].includes(normalizedRole);
 
   const getGPSLocation = (): Promise<string> => {
     return new Promise((resolve) => {
@@ -101,7 +105,6 @@ export default function IhbarDetay() {
     fetchData(); setLoading(false)
   }
 
-  // --- YENİ: BİLDİRİM TETİKLEME FONKSİYONU ---
   const bildirimOlustur = async (durum: 'Tamamlandi' | 'Durduruldu') => {
     let hedefRoller: string[] = [];
     let mesajMetni = "";
@@ -116,10 +119,7 @@ export default function IhbarDetay() {
     }
 
     await supabase.from('bildirimler').insert([{
-      ihbar_id: id,
-      mesaj: mesajMetni,
-      islem_yapan_ad: islemYapanAd,
-      hedef_roller: hedefRoller
+      ihbar_id: id, mesaj: mesajMetni, islem_yapan_ad: islemYapanAd, hedef_roller: hedefRoller
     }]);
   }
 
@@ -136,7 +136,6 @@ export default function IhbarDetay() {
     await supabase.from('ihbarlar').update(updates).eq('id', id);
     await supabase.from('is_zamanlari').update({ bitis_tarihi: simdi, durum: yeniDurum, personel_notu: personelNotu }).eq('ihbar_id', id).is('bitis_tarihi', null);
 
-    // --- BİLDİRİMİ GÖNDER ---
     await bildirimOlustur(yeniDurum);
 
     if (yeniDurum === 'Tamamlandi') router.push('/dashboard');
@@ -145,69 +144,92 @@ export default function IhbarDetay() {
 
   const handleHavuzaAl = async () => {
     if(!confirm("İş havuza geri gönderilsin mi?")) return;
-    
     setLoading(true);
     const islemYapanAd = ihbar?.profiles?.full_name || "Bilinmeyen Personel";
-
-    // 1. İhbarı Havuza Geri Döndür
     await supabase.from('ihbarlar').update({ durum: 'Beklemede', atanan_personel: null, kabul_tarihi: null }).eq('id', id);
-    
-    // 2. 🔔 ÇAĞRI MERKEZİNE BİLDİRİM GÖNDER
     await supabase.from('bildirimler').insert([{
       ihbar_id: id,
       mesaj: `🔄 İŞ HAVUZA DÖNDÜ: #${id} nolu iş (${ihbar?.konu}), ${islemYapanAd} tarafından havuza geri bırakıldı.`,
       islem_yapan_ad: islemYapanAd,
       hedef_roller: ['Çağrı Merkezi']
     }]);
-
     router.push('/dashboard');
   }
 
-  if (!ihbar) return <div className="p-10 text-center font-black">YÜKLENİYOR...</div>
+  if (!ihbar) return <div className="p-10 text-center font-black text-white bg-[#0a0b0e] min-h-screen">YÜKLENİYOR...</div>
 
   return (
-    <div className="p-3 md:p-10 bg-gray-50 min-h-screen text-black">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen flex flex-col text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
+      
+      {/* 🖼️ TAM SAYFA KURUMSAL ARKA PLAN */}
+      <div 
+        className="fixed inset-0 z-0 opacity-20 pointer-events-none"
+        style={{
+          backgroundImage: "url('/logo.png')",
+          backgroundSize: '80%',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          filter: 'brightness(0.5) contrast(1.2) grayscale(0.5)'
+        }}
+      ></div>
+
+      <div className="p-3 md:p-8 max-w-7xl mx-auto space-y-6 relative z-10 w-full">
         
-        <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border-2 border-gray-100">
-          <button onClick={() => router.push('/dashboard')} className="text-blue-900 font-black text-xs uppercase italic">← GERİ</button>
-          <div className="text-[10px] font-bold text-gray-400 uppercase italic"> {ihbar.ifs_is_emri_no || 'IFS KAYDI YOK'} </div>
+        {/* 🏛️ ÜST BAR VE KURUMSAL GERİ BUTONU */}
+        <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-4 rounded-2xl shadow-2xl border border-gray-800">
+          <button 
+            onClick={() => router.push('/dashboard')} 
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/20"
+          >
+            <span className="text-sm">←</span> GERİ DÖN
+          </button>
+          <div className="flex items-center gap-4">
+            <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
+            <div className="text-[10px] font-black text-orange-500 uppercase italic border-l border-gray-700 pl-4 tracking-widest"> 
+              {ihbar.ifs_is_emri_no || 'IFS KAYDI YOK'} 
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white p-6 md:p-10 rounded-[3rem] shadow-xl border-b-8 border-blue-900">
-              <div className="mb-8">
-                <p className="text-[9px] font-black text-blue-400 uppercase italic">BİRİM / GEMİ</p>
-                <h1 className="text-3xl md:text-5xl font-black text-gray-800 uppercase italic leading-none">{ihbar.musteri_adi}</h1>
-                <p className="text-xl text-blue-700 font-bold uppercase mt-2 italic">{ihbar.konu}</p>
+            {/* SOL ANA PANEL */}
+            <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 md:p-10 rounded-[3rem] shadow-2xl border border-gray-800/50">
+              <div className="mb-8 border-b border-gray-800 pb-6">
+                <p className="text-[9px] font-black text-orange-500 uppercase italic tracking-[0.2em] mb-2">OPERASYON DETAYI</p>
+                <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic leading-none mb-3 drop-shadow-md">{ihbar.musteri_adi}</h1>
+                <p className="text-lg text-blue-400 font-bold uppercase italic tracking-tight">{ihbar.konu}</p>
               </div>
 
               {ihbar.ihbar_veren_tel && (
-                <div className="mb-8 p-6 bg-green-50 border-2 border-green-100 rounded-[2.5rem] flex justify-between items-center">
-                  <div className="flex items-center gap-4">
+                <div className="mb-8 p-6 bg-orange-600/10 border border-orange-500/20 rounded-[2.5rem] flex justify-between items-center shadow-inner">
+                  <div className="flex items-center gap-4 text-white">
                     <span className="text-3xl">📞</span>
-                    <div><p className="text-[10px] font-black text-green-600 uppercase">İrtibat Numarası</p><p className="text-xl font-black">{ihbar.ihbar_veren_tel}</p></div>
+                    <div><p className="text-[10px] font-black text-orange-500 uppercase italic mb-1">İrtibat Hattı</p><p className="text-xl font-black">{ihbar.ihbar_veren_tel}</p></div>
                   </div>
-                  <a href={`tel:${ihbar.ihbar_veren_tel}`} className="bg-green-600 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase shadow-lg active:scale-95 transition-all">ARA</a>
+                  <a href={`tel:${ihbar.ihbar_veren_tel}`} className="bg-orange-600 hover:bg-orange-700 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl transition-all active:scale-95 shadow-orange-900/30">ARAMA YAP</a>
                 </div>
               )}
 
-              <div className="bg-gray-50 p-6 rounded-3xl border-2 border-dashed border-gray-200 mb-8 italic">
-                {ihbar.aciklama || 'Açıklama belirtilmemiş.'}
+              <div className="bg-black/30 p-8 rounded-3xl border border-gray-800 mb-8 italic text-gray-300 leading-relaxed text-sm shadow-inner font-medium">
+                "{ihbar.aciklama || 'Açıklama belirtilmemiş.'}"
               </div>
 
               <div className="mt-10">
-                <h3 className="font-black text-xs text-gray-400 uppercase mb-4 italic">📦 KULLANILAN MALZEME LİSTESİ</h3>
-                <div className="overflow-hidden rounded-3xl border border-gray-100">
+                <h3 className="font-black text-[10px] text-gray-500 uppercase mb-4 italic tracking-widest text-white">📦 MALZEME SARFİYATI</h3>
+                <div className="overflow-hidden rounded-3xl border border-gray-800 shadow-2xl">
                   <table className="w-full text-left">
-                    <thead className="bg-gray-800 text-white text-[10px] font-black uppercase italic">
-                      <tr><th className="p-4">KOD</th><th className="p-4">MALZEME ADI</th><th className="p-4 text-right">MİKTAR</th></tr>
+                    <thead className="bg-[#111318] text-orange-500 text-[9px] font-black uppercase italic tracking-widest">
+                      <tr><th className="p-4">KOD</th><th className="p-4">MALZEME</th><th className="p-4 text-right">ADET</th></tr>
                     </thead>
-                    <tbody className="divide-y text-sm font-bold uppercase italic">
-                      {kullanilanlar.map(k => (
-                        <tr key={k.id}><td className="p-4 text-blue-600">{k.malzeme_kodu}</td><td className="p-4">{k.malzeme_adi}</td><td className="p-4 text-right text-orange-600">{k.kullanim_adedi}</td></tr>
-                      ))}
+                    <tbody className="divide-y divide-gray-800 text-xs font-bold uppercase italic text-gray-200 bg-black/20">
+                      {kullanilanlar.length === 0 ? (
+                        <tr><td colSpan={3} className="p-10 text-center text-gray-600 tracking-tighter">Henüz sarfiyat girilmedi</td></tr>
+                      ) : (
+                        kullanilanlar.map(k => (
+                          <tr key={k.id} className="hover:bg-white/5 transition-colors"><td className="p-4 text-orange-400">{k.malzeme_kodu}</td><td className="p-4">{k.malzeme_adi}</td><td className="p-4 text-right text-blue-400 font-black">{k.kullanim_adedi}</td></tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -216,58 +238,74 @@ export default function IhbarDetay() {
           </div>
 
           <div className="space-y-6">
+            {/* SAĞ İŞLEM PANELİ */}
             {ihbar.durum === 'Calisiliyor' ? (
-              <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-2 border-blue-600">
-                <h3 className="font-black text-lg mb-4 text-blue-900 italic uppercase">İŞLEM PANELİ</h3>
+              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-2xl border border-orange-500/30">
+                <h3 className="font-black text-lg mb-6 text-white italic uppercase flex items-center gap-3">
+                  <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(249,115,22,1)] text-white"></span> İŞLEM PANELİ
+                </h3>
                 <div className="space-y-4 mb-6">
-                  <input type="text" placeholder="🔍 MALZEME ARA..." className="w-full p-4 border rounded-2xl font-bold text-xs bg-gray-50" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
+                  <input type="text" placeholder="🔍 MALZEME ARA..." className="w-full p-4 border border-gray-700 rounded-2xl font-black text-[10px] bg-black/40 text-white placeholder-gray-500 focus:border-orange-500 transition-all outline-none" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
                   {searchTerm && (
-                    <div className="bg-white border rounded-xl max-h-40 overflow-auto shadow-2xl">
+                    <div className="bg-[#111318] border border-gray-700 rounded-xl max-h-40 overflow-auto shadow-2xl z-20 relative custom-scrollbar">
                       {malzemeKatalog.filter(m => m.malzeme_adi.toLowerCase().includes(searchTerm.toLowerCase())).map(m => (
-                        <div key={m.id} onClick={()=>{setSecilenMalzeme(m); setSearchTerm('')}} className="p-3 hover:bg-blue-50 cursor-pointer text-[10px] font-black border-b uppercase flex justify-between">
-                          <span>{m.malzeme_adi}</span><span className="text-blue-400">[{m.malzeme_kodu}]</span>
+                        <div key={m.id} onClick={()=>{setSecilenMalzeme(m); setSearchTerm('')}} className="p-4 hover:bg-orange-600/10 cursor-pointer text-[9px] font-black border-b border-gray-800 uppercase flex justify-between text-gray-300">
+                          <span>{m.malzeme_adi}</span><span className="text-orange-500">[{m.malzeme_kodu}]</span>
                         </div>
                       ))}
                     </div>
                   )}
                   {secilenMalzeme && (
-                    <div className="flex items-center gap-2 p-3 bg-emerald-50 rounded-xl border">
-                      <span className="text-[9px] font-black uppercase flex-1 truncate text-black">✅ {secilenMalzeme.malzeme_adi}</span>
-                      <input type="number" className="w-16 p-2 bg-white border rounded-lg font-black text-center" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
-                      <button onClick={malzemeEkle} className="bg-emerald-600 text-white p-2 rounded-lg font-black text-[9px]">EKLE</button>
+                    <div className="flex items-center gap-2 p-4 bg-orange-600/10 rounded-2xl border border-orange-500/30 shadow-inner">
+                      <span className="text-[9px] font-black uppercase flex-1 truncate text-white">✅ {secilenMalzeme.malzeme_adi}</span>
+                      <input type="number" className="w-16 p-2 bg-black/50 border border-gray-700 rounded-lg font-black text-center text-white" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
+                      <button onClick={malzemeEkle} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-black text-[9px]">EKLE</button>
                     </div>
                   )}
                 </div>
-                <textarea className="w-full p-4 border rounded-2xl bg-gray-50 text-xs font-bold mb-4" placeholder="Yapılan işlemi detaylandırın..." rows={4} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
+                <textarea className="w-full p-4 border border-gray-700 rounded-2xl bg-black/40 text-[11px] font-bold mb-6 text-white placeholder-gray-500 focus:border-blue-500 transition-all outline-none" placeholder="İşlem notu girin..." rows={5} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
                 <div className="flex flex-col gap-3">
-                    <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 text-white py-6 rounded-3xl font-black shadow-xl uppercase italic text-xl">🏁 İŞİ BİTİR</button>
-                    <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-orange-500 text-white py-4 rounded-3xl font-black shadow-lg uppercase italic text-xs">⚠️ İŞİ DURDUR</button>
+                    <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-3xl font-black shadow-xl shadow-green-900/20 uppercase italic text-xl active:scale-95 transition-all">🏁 İŞİ BİTİR</button>
+                    <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-orange-600/20 text-orange-500 border border-orange-600/30 py-4 rounded-3xl font-black shadow-lg uppercase italic text-[10px] active:scale-95 transition-all">⚠️ İŞİ DURDUR</button>
                 </div>
               </div>
             ) : ihbar.durum !== 'Tamamlandi' && (
-              <button onClick={isiBaslat} className="w-full bg-blue-600 text-white py-10 rounded-[3rem] font-black shadow-2xl uppercase italic text-2xl animate-pulse">🚀 İŞE BAŞLA</button>
+              <button onClick={isiBaslat} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-12 rounded-[3rem] font-black shadow-2xl uppercase italic text-3xl animate-pulse active:scale-95 transition-all shadow-orange-900/30">🚀 İŞE BAŞLA</button>
             )}
 
+            {/* --- 🛠️ YÖNETİCİ KONTROLLERİ (ÇALIŞMA GARANTİLİ) --- */}
             {canEditAssignment && (
-              <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-t-8 border-slate-800">
-                <h3 className="font-black text-[10px] uppercase text-slate-500 mb-4 italic tracking-widest">YÖNETİCİ KONTROLLERİ</h3>
-                <div className="space-y-3">
-                  <input placeholder="IFS İŞ EMRİ NO" className="w-full p-4 bg-blue-50 border rounded-2xl font-black text-xs" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
-                  <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-4 bg-gray-50 border rounded-2xl font-bold text-xs uppercase">
-                    <option value="">PERSONEL SEÇİN...</option>
-                    {personeller.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-                  </select>
-                  <button onClick={async () => { await supabase.from('ihbarlar').update({ atanan_personel: seciliAtanan, ifs_is_emri_no: ifsNo }).eq('id', id); fetchData(); alert("İş Emri ve Personel Güncellendi."); }} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black text-[10px] uppercase">BİLGİLERİ GÜNCELLE</button>
+              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-xl border-t-8 border-orange-600">
+                <h3 className="font-black text-[10px] uppercase text-gray-500 mb-6 italic tracking-[0.2em] text-white">YÖNETİCİ KONTROLLERİ</h3>
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-black text-gray-600 ml-4">IFS İŞ EMRİ NO</p>
+                    <input placeholder="GİRİŞ YAPIN..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] text-orange-500 outline-none focus:border-orange-500" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-black text-gray-600 ml-4">PERSONEL ATAMASI</p>
+                    <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] uppercase text-white outline-none focus:border-orange-500">
+                      <option value="">PERSONEL SEÇİN...</option>
+                      {personeller.map(p => <option key={p.id} value={p.id} className="bg-[#1a1c23]">{p.full_name}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={async () => { await supabase.from('ihbarlar').update({ atanan_personel: seciliAtanan, ifs_is_emri_no: ifsNo }).eq('id', id); fetchData(); alert("İş Emri ve Personel Güncellendi."); }} className="w-full bg-white text-black py-4 rounded-2xl font-black text-[9px] uppercase hover:bg-orange-500 hover:text-white transition-all transition-colors duration-300">BİLGİLERİ GÜNCELLE</button>
                 </div>
               </div>
             )}
             
             {canReleaseToPool && (
-              <button onClick={handleHavuzaAl} className="w-full text-gray-400 font-black uppercase italic text-[9px] pt-4 hover:text-red-500 transition-all">❌ BU İŞİ HAVUZA GERİ GÖNDER</button>
+              <button onClick={handleHavuzaAl} className="w-full text-gray-600 hover:text-red-500 font-black uppercase italic text-[8px] pt-4 transition-all tracking-widest text-white">❌ BU İŞİ HAVUZA GERİ GÖNDER</button>
             )}
           </div>
         </div>
       </div>
+      
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 10px; }
+      `}</style>
     </div>
   )
 }
