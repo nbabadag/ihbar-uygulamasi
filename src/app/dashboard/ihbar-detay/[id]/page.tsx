@@ -44,7 +44,7 @@ export default function IhbarDetay() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       setUserId(user.id)
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
       setUserRole(profile?.role || '')
     }
 
@@ -101,6 +101,28 @@ export default function IhbarDetay() {
     fetchData(); setLoading(false)
   }
 
+  // --- YENİ: BİLDİRİM TETİKLEME FONKSİYONU ---
+  const bildirimOlustur = async (durum: 'Tamamlandi' | 'Durduruldu') => {
+    let hedefRoller: string[] = [];
+    let mesajMetni = "";
+    const islemYapanAd = ihbar?.profiles?.full_name || "Bilinmeyen Personel";
+
+    if (durum === 'Durduruldu') {
+      hedefRoller = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'];
+      mesajMetni = `⚠️ İŞ DURDURULDU: #${id} nolu iş (${ihbar?.konu}) ${islemYapanAd} tarafından durduruldu.`;
+    } else {
+      hedefRoller = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici'];
+      mesajMetni = `✅ İŞ TAMAMLANDI: #${id} nolu iş (${ihbar?.konu}) ${islemYapanAd} tarafından bitirildi.`;
+    }
+
+    await supabase.from('bildirimler').insert([{
+      ihbar_id: id,
+      mesaj: mesajMetni,
+      islem_yapan_ad: islemYapanAd,
+      hedef_roller: hedefRoller
+    }]);
+  }
+
   const isiKapatVeyaDurdur = async (yeniDurum: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu gerekli.");
     if (intervalRef.current) clearInterval(intervalRef.current);
@@ -114,13 +136,30 @@ export default function IhbarDetay() {
     await supabase.from('ihbarlar').update(updates).eq('id', id);
     await supabase.from('is_zamanlari').update({ bitis_tarihi: simdi, durum: yeniDurum, personel_notu: personelNotu }).eq('ihbar_id', id).is('bitis_tarihi', null);
 
+    // --- BİLDİRİMİ GÖNDER ---
+    await bildirimOlustur(yeniDurum);
+
     if (yeniDurum === 'Tamamlandi') router.push('/dashboard');
     else { fetchData(); setLoading(false); }
   }
 
   const handleHavuzaAl = async () => {
     if(!confirm("İş havuza geri gönderilsin mi?")) return;
+    
+    setLoading(true);
+    const islemYapanAd = ihbar?.profiles?.full_name || "Bilinmeyen Personel";
+
+    // 1. İhbarı Havuza Geri Döndür
     await supabase.from('ihbarlar').update({ durum: 'Beklemede', atanan_personel: null, kabul_tarihi: null }).eq('id', id);
+    
+    // 2. 🔔 ÇAĞRI MERKEZİNE BİLDİRİM GÖNDER
+    await supabase.from('bildirimler').insert([{
+      ihbar_id: id,
+      mesaj: `🔄 İŞ HAVUZA DÖNDÜ: #${id} nolu iş (${ihbar?.konu}), ${islemYapanAd} tarafından havuza geri bırakıldı.`,
+      islem_yapan_ad: islemYapanAd,
+      hedef_roller: ['Çağrı Merkezi']
+    }]);
+
     router.push('/dashboard');
   }
 
@@ -144,7 +183,6 @@ export default function IhbarDetay() {
                 <p className="text-xl text-blue-700 font-bold uppercase mt-2 italic">{ihbar.konu}</p>
               </div>
 
-              {/* 📞 TELEFON ARA BUTONU */}
               {ihbar.ihbar_veren_tel && (
                 <div className="mb-8 p-6 bg-green-50 border-2 border-green-100 rounded-[2.5rem] flex justify-between items-center">
                   <div className="flex items-center gap-4">
@@ -159,7 +197,6 @@ export default function IhbarDetay() {
                 {ihbar.aciklama || 'Açıklama belirtilmemiş.'}
               </div>
 
-              {/* MALZEME TABLOSU */}
               <div className="mt-10">
                 <h3 className="font-black text-xs text-gray-400 uppercase mb-4 italic">📦 KULLANILAN MALZEME LİSTESİ</h3>
                 <div className="overflow-hidden rounded-3xl border border-gray-100">
@@ -179,7 +216,6 @@ export default function IhbarDetay() {
           </div>
 
           <div className="space-y-6">
-            {/* SAHA PERSONELİ İŞLEMLERİ */}
             {ihbar.durum === 'Calisiliyor' ? (
               <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-2 border-blue-600">
                 <h3 className="font-black text-lg mb-4 text-blue-900 italic uppercase">İŞLEM PANELİ</h3>
@@ -212,7 +248,6 @@ export default function IhbarDetay() {
               <button onClick={isiBaslat} className="w-full bg-blue-600 text-white py-10 rounded-[3rem] font-black shadow-2xl uppercase italic text-2xl animate-pulse">🚀 İŞE BAŞLA</button>
             )}
 
-            {/* YETKİLİ PANELİ (ATAMA) */}
             {canEditAssignment && (
               <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border-t-8 border-slate-800">
                 <h3 className="font-black text-[10px] uppercase text-slate-500 mb-4 italic tracking-widest">YÖNETİCİ KONTROLLERİ</h3>
@@ -227,7 +262,6 @@ export default function IhbarDetay() {
               </div>
             )}
             
-            {/* 🔄 HAVUZA GERİ GÖNDER - YETKİ KONTROLÜ */}
             {canReleaseToPool && (
               <button onClick={handleHavuzaAl} className="w-full text-gray-400 font-black uppercase italic text-[9px] pt-4 hover:text-red-500 transition-all">❌ BU İŞİ HAVUZA GERİ GÖNDER</button>
             )}

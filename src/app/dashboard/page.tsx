@@ -13,6 +13,9 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
   
+  // --- YENİ: BİLDİRİM STATE ---
+  const [bildirimSayisi, setBildirimSayisi] = useState(0)
+  
   const lastCountRef = useRef<number>(0)
 
   // --- YETKİ KONTROLLERİ (Orijinal Mantığına Sadık Kalındı) ---
@@ -29,6 +32,8 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
+    
+    // İhbarları Çek
     const { data: ihbarData } = await supabase.from('ihbarlar')
       .select(`*, profiles (full_name), calisma_gruplari (grup_adi)`)
       .order('created_at', { ascending: false })
@@ -42,6 +47,15 @@ export default function DashboardPage() {
         tamamlanan: filtered.filter(i => i.durum === 'Tamamlandi').length
       })
     }
+
+    // --- YENİ: OKUNMAMIŞ BİLDİRİMLERİ ÇEK ---
+    const { count } = await supabase
+      .from('bildirimler')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_read', false)
+      .contains('hedef_roller', [role.trim()]) // Kullanıcının rolüne göre filtrele
+
+    setBildirimSayisi(count || 0)
   }, [])
 
   useEffect(() => {
@@ -58,6 +72,10 @@ export default function DashboardPage() {
       }
     }
     checkUser()
+    
+    // Saat Güncelleme
+    const timer = setInterval(() => setNow(new Date()), 60000)
+    return () => clearInterval(timer)
   }, [router, fetchData])
 
   const handleLogout = async () => {
@@ -68,7 +86,7 @@ export default function DashboardPage() {
   const JobCard = ({ ihbar }: { ihbar: any }) => {
     const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
     return (
-      <div onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className="p-4 rounded-2xl shadow-sm border mb-3 bg-white border-gray-100 text-black cursor-pointer active:scale-95 transition-all">
+      <div onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className="p-4 rounded-2xl shadow-sm border mb-3 bg-white border-gray-100 text-black cursor-pointer active:scale-95 transition-all hover:border-blue-300">
         <div className="flex justify-between items-start mb-1 font-black text-black">
           <span className="text-[10px] italic text-blue-500">#{ihbar.ifs_is_emri_no || 'IFS YOK'}</span>
           <span className="text-[9px] text-gray-400">{new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</span>
@@ -91,7 +109,6 @@ export default function DashboardPage() {
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm overflow-y-auto custom-scrollbar">
           
-          {/* HARİTA BUTONU */}
           <button 
             onClick={() => router.push('/dashboard/saha-haritasi')}
             className="w-full text-left p-4 bg-orange-600 hover:bg-orange-700 rounded-2xl flex items-center gap-3 transition-all shadow-lg animate-pulse mb-2"
@@ -102,6 +119,19 @@ export default function DashboardPage() {
 
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
           
+          {/* BİLDİRİMLER BUTONU (SAYAÇLI) */}
+          <div 
+            onClick={() => router.push('/dashboard/bildirimler')} 
+            className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer flex justify-between items-center"
+          >
+            <span>🔔 Bildirimler</span>
+            {bildirimSayisi > 0 && (
+              <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">
+                {bildirimSayisi}
+              </span>
+            )}
+          </div>
+
           {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">📢 İhbar Kayıt</div>}
           {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">👤 Personel Yönetimi</div>}
           {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">👥 Çalışma Grupları</div>}
@@ -110,68 +140,81 @@ export default function DashboardPage() {
         </nav>
 
         <div className="mt-auto bg-blue-950/50 p-3 rounded-2xl border border-blue-800/50">
-          <span className="text-[11px] font-black uppercase italic block">{userName}</span>
-          <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">{userRole}</span>
-          <button onClick={handleLogout} className="w-full mt-3 bg-red-600 p-2 rounded-xl font-black text-[10px] uppercase">ÇIKIŞ Yap</button>
+          <div className="flex justify-between items-start">
+            <div>
+              <span className="text-[11px] font-black uppercase italic block">{userName}</span>
+              <span className="text-[9px] font-bold text-blue-400 uppercase tracking-widest">{userRole}</span>
+            </div>
+            {/* MOBİL UYUMLU BİLDİRİM NOKTASI */}
+            {bildirimSayisi > 0 && <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>}
+          </div>
+          <button onClick={handleLogout} className="w-full mt-3 bg-red-600 p-2 rounded-xl font-black text-[10px] uppercase shadow-lg">ÇIKIŞ Yap</button>
         </div>
       </div>
 
       {/* ANA İÇERİK ALANI */}
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold flex flex-col gap-6">
         
-       {/* HARİTA WIDGET - CANLI VERİ ENTEGRELİ */}
-{!isSaha && (
-  <div className="w-full bg-white rounded-[2.5rem] border-2 border-gray-200 overflow-hidden shadow-sm hidden md:block">
-    <div className="p-4 bg-gray-800 text-white flex justify-between items-center font-black italic">
-      <h3 className="text-[10px] uppercase tracking-widest text-white">🛰️ CANLI SAHA DURUMU // TERSANE</h3>
-      <button 
-        onClick={() => router.push('/dashboard/saha-haritasi')} 
-        className="text-[9px] bg-blue-600 px-4 py-1.5 rounded-full font-black text-white hover:bg-blue-700 transition-all shadow-lg"
-      >
-        TAM EKRAN HARİTA →
-      </button>
-    </div>
-    
-    <div className="h-[300px] bg-slate-100 relative">
-      {/* Google Maps: Tersane Bölgesi (Dark Stil Filtreli) */}
-      <iframe
-      id="saha-haritasi-frame"
-        width="100%"
-        height="100%"
-        frameBorder="0"
-        style={{ border: 0, filter: 'grayscale(0.2) contrast(1.1)' }}
-        src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d4364.785224510651!2d29.510035505498912!3d40.732240003592516!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e1!3m2!1str!2str!4v1769106998126!5m2!1str!2str"
-        allowFullScreen
-      ></iframe>
-      
-      {/* Harita Üzerinde Yüzen Bilgi Paneli */}
-      <div className="absolute top-6 left-6 bg-white/90 backdrop-blur-md p-4 rounded-[2rem] shadow-2xl border border-gray-100 flex items-center gap-4">
-        <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-blue-500/30">📡</div>
-        <div>
-          <p className="text-[9px] font-black text-blue-600 uppercase leading-none mb-1">Aktif Operasyon</p>
-          <div className="flex items-end gap-1">
-            <p className="text-3xl font-black text-gray-900 leading-none">{stats.islemde}</p>
-            <p className="text-[10px] font-bold text-gray-400 mb-1 tracking-tighter uppercase italic">İş Bölgesi</p>
-          </div>
+        {/* MOBİL ÜST BAR (PC'DE GİZLİ) */}
+        <div className="md:hidden flex justify-between items-center bg-blue-900 p-4 rounded-2xl text-white shadow-lg">
+          <h2 className="font-black italic">SAHA 360</h2>
+          <button onClick={() => router.push('/dashboard/bildirimler')} className="relative p-2">
+            <span className="text-xl">🔔</span>
+            {bildirimSayisi > 0 && <span className="absolute top-0 right-0 bg-red-600 text-[8px] w-4 h-4 flex items-center justify-center rounded-full">{bildirimSayisi}</span>}
+          </button>
         </div>
-      </div>
-    </div>
-  </div>
-)}
+
+        {/* HARİTA WIDGET */}
+        {!isSaha && (
+          <div className="w-full bg-white rounded-[2.5rem] border-2 border-gray-200 overflow-hidden shadow-sm hidden md:block">
+            <div className="p-4 bg-gray-800 text-white flex justify-between items-center font-black italic">
+              <h3 className="text-[10px] uppercase tracking-widest text-white">🛰️ CANLI SAHA DURUMU // TERSANE</h3>
+              <button 
+                onClick={() => router.push('/dashboard/saha-haritasi')} 
+                className="text-[9px] bg-blue-600 px-4 py-1.5 rounded-full font-black text-white hover:bg-blue-700 transition-all shadow-lg"
+              >
+                TAM EKRAN HARİTA →
+              </button>
+            </div>
+            
+            <div className="h-[300px] bg-slate-100 relative">
+              <iframe
+                id="saha-haritasi-frame"
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                style={{ border: 0, filter: 'grayscale(0.2) contrast(1.1)' }}
+                src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d4364.785224510651!2d29.510035505498912!3d40.732240003592516!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e1!3m2!1str!2str!4v1769106998126!5m2!1str!2str"
+                allowFullScreen
+              ></iframe>
+              
+              <div className="absolute top-6 left-6 bg-white/90 backdrop-blur-md p-4 rounded-[2rem] shadow-2xl border border-gray-100 flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-blue-500/30">📡</div>
+                <div>
+                  <p className="text-[9px] font-black text-blue-600 uppercase leading-none mb-1">Aktif Operasyon</p>
+                  <div className="flex items-end gap-1">
+                    <p className="text-3xl font-black text-gray-900 leading-none">{stats.islemde}</p>
+                    <p className="text-[10px] font-bold text-gray-400 mb-1 tracking-tighter uppercase italic">İş Bölgesi</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* LİSTELER */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="flex flex-col bg-yellow-50 p-4 rounded-[2rem] border-2 border-yellow-200 h-[500px] overflow-hidden flex flex-col">
+          <div className="flex flex-col bg-yellow-50 p-4 rounded-[2rem] border-2 border-yellow-200 h-[500px] overflow-hidden">
             <h3 className="text-[11px] font-black uppercase italic mb-4 text-yellow-700">🟡 Havuz ({stats.bekleyen})</h3>
-            <div className="overflow-y-auto flex-1">{ihbarlar.filter(i => i.durum === 'Beklemede').map(i => <JobCard key={i.id} ihbar={i} />)}</div>
+            <div className="overflow-y-auto flex-1 custom-scrollbar">{ihbarlar.filter(i => i.durum === 'Beklemede').map(i => <JobCard key={i.id} ihbar={i} />)}</div>
           </div>
-          <div className="flex flex-col bg-blue-50 p-4 rounded-[2rem] border-2 border-blue-200 h-[500px] overflow-hidden flex flex-col">
+          <div className="flex flex-col bg-blue-50 p-4 rounded-[2rem] border-2 border-blue-200 h-[500px] overflow-hidden">
             <h3 className="text-[11px] font-black uppercase italic mb-4 text-blue-700">🔵 İşlemde ({stats.islemde})</h3>
-            <div className="overflow-y-auto flex-1">{ihbarlar.filter(i => i.durum !== 'Beklemede' && i.durum !== 'Tamamlandi').map(i => <JobCard key={i.id} ihbar={i} />)}</div>
+            <div className="overflow-y-auto flex-1 custom-scrollbar">{ihbarlar.filter(i => i.durum !== 'Beklemede' && i.durum !== 'Tamamlandi').map(i => <JobCard key={i.id} ihbar={i} />)}</div>
           </div>
-          <div className="flex flex-col bg-green-50 p-4 rounded-[2rem] border-2 border-green-200 h-[500px] overflow-hidden flex flex-col">
+          <div className="flex flex-col bg-green-50 p-4 rounded-[2rem] border-2 border-green-200 h-[500px] overflow-hidden">
             <h3 className="text-[11px] font-black uppercase italic mb-4 text-green-700">🟢 Biten ({stats.tamamlanan})</h3>
-            <div className="overflow-y-auto flex-1">{ihbarlar.filter(i => i.durum === 'Tamamlandi').map(i => <JobCard key={i.id} ihbar={i} />)}</div>
+            <div className="overflow-y-auto flex-1 custom-scrollbar">{ihbarlar.filter(i => i.durum === 'Tamamlandi').map(i => <JobCard key={i.id} ihbar={i} />)}</div>
           </div>
         </div>
       </div>
