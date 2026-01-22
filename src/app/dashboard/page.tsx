@@ -16,14 +16,18 @@ export default function DashboardPage() {
   
   const lastCountRef = useRef<number>(0)
 
-  const normalizedRole = userRole?.trim() || '';
-  const isSaha = normalizedRole === 'Saha Personeli';
-  const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
-  const canManageUsers = ['Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
-  const canSeeReports = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
-  const canSeeTV = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi', 'Admin'].includes(normalizedRole);
-  const canManageGroups = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
-  const seePool = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi', 'Admin'].includes(normalizedRole);
+  // --- YETKİ KONTROLLERİ (Büyük/Küçük Harf Duyarsız) ---
+  const normalizedRole = userRole?.trim().toUpperCase() || '';
+  const isAdmin = normalizedRole === 'ADMIN';
+  const isSaha = normalizedRole === 'SAHA PERSONELI';
+
+  // Admin veya ilgili roller için yetkiler
+  const canCreateJob = isAdmin || ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canManageUsers = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canSeeReports = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canSeeTV = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ÇAĞRI MERKEZİ'].includes(normalizedRole);
+  const canManageGroups = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const seePool = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ÇAĞRI MERKEZİ'].includes(normalizedRole);
 
   const playSound = (url: string) => {
     const audio = new Audio(url)
@@ -43,7 +47,7 @@ export default function DashboardPage() {
     
     let query = supabase.from('ihbarlar').select(`*, profiles (full_name), calisma_gruplari (grup_adi)`)
     
-    if (role === 'Saha Personeli') {
+    if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
       query = query.eq('atanan_personel', id)
     } 
 
@@ -178,7 +182,7 @@ export default function DashboardPage() {
       </div>
 
       {/* 💻 PC SOL MENÜ (SIDEBAR) */}
-      <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
+      <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full z-50">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm">
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
