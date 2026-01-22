@@ -13,7 +13,11 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
   
+  // --- YENİ: BİLDİRİM VE PANEL STATE'LERİ ---
   const [bildirimSayisi, setBildirimSayisi] = useState(0)
+  const [bildirimler, setBildirimler] = useState<any[]>([])
+  const [isBildirimAcik, setIsBildirimAcik] = useState(false)
+  
   const lastCountRef = useRef<number>(0)
 
   // --- YETKİ KONTROLLERİ ---
@@ -31,6 +35,7 @@ export default function DashboardPage() {
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
+    // İhbarları Çek
     const { data: ihbarData } = await supabase.from('ihbarlar')
       .select(`*, profiles (full_name), calisma_gruplari (grup_adi)`)
       .order('created_at', { ascending: false })
@@ -45,12 +50,16 @@ export default function DashboardPage() {
       })
     }
 
-    const { count } = await supabase
+    // --- YENİ: BİLDİRİMLERİ VE SAYIYI ÇEK ---
+    const { data: bData, count } = await supabase
       .from('bildirimler')
-      .select('*', { count: 'exact', head: true })
+      .select('*', { count: 'exact' })
       .eq('is_read', false)
       .contains('hedef_roller', [role.trim()])
+      .order('created_at', { ascending: false })
+      .limit(20)
 
+    setBildirimler(bData || [])
     setBildirimSayisi(count || 0)
   }, [])
 
@@ -68,7 +77,7 @@ export default function DashboardPage() {
         
         fetchData(currentRole, user.id)
 
-        // --- 📡 CANLI DİNLEME (REALTIME) GERİ EKLENDİ ---
+        // --- 📡 CANLI DİNLEME (REALTIME) ---
         channel = supabase
           .channel('db-changes')
           .on(
@@ -120,25 +129,88 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row text-black font-sans">
+    <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row text-black font-sans relative overflow-hidden">
+      
+      {/* 🔔 SAĞDAN AÇILAN BİLDİRİM PANELİ (DRAWER) */}
+      <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.1)] z-[100] transform transition-transform duration-300 ease-in-out p-6 flex flex-col ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="flex justify-between items-center mb-8">
+          <h3 className="text-xl font-black italic uppercase text-blue-900 tracking-tighter">Bildirimler</h3>
+          <button onClick={() => setIsBildirimAcik(false)} className="bg-gray-100 hover:bg-gray-200 p-2 rounded-full text-[10px] font-black uppercase italic">Kapat ×</button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2">
+          {bildirimler.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center opacity-30 italic">
+               <span className="text-4xl mb-2">🔔</span>
+               <p className="font-bold">Yeni bildirim yok</p>
+            </div>
+          ) : (
+            bildirimler.map((b) => (
+              <div 
+                key={b.id} 
+                onClick={() => { router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); setIsBildirimAcik(false); }}
+                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer bg-gray-50 hover:bg-white hover:border-blue-400 ${b.mesaj.includes('DURDURULDU') || b.mesaj.includes('HAVUZA') ? 'border-orange-100' : 'border-green-100'}`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white ${b.mesaj.includes('DURDURULDU') ? 'bg-orange-500' : b.mesaj.includes('HAVUZA') ? 'bg-blue-500' : 'bg-green-500'}`}>
+                    {b.mesaj.includes('DURDURULDU') ? 'DURDU' : b.mesaj.includes('HAVUZA') ? 'HAVUZ' : 'BİTTİ'}
+                  </span>
+                  <span className="text-[8px] font-bold text-gray-300 italic">{new Date(b.created_at).toLocaleTimeString('tr-TR')}</span>
+                </div>
+                <p className="text-[11px] font-black italic uppercase leading-tight mb-2 text-gray-800">{b.mesaj}</p>
+                <div className="flex justify-between items-center text-[9px] font-bold text-blue-600">
+                  <span>Kayıt No: #{b.ihbar_id}</span>
+                  <span className="text-gray-400 italic">👤 {b.islem_yapan_ad?.split(' ')[0]}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* PANEL AÇIKKEN ARKA PLANI KARARTAN KATMAN */}
+      {isBildirimAcik && (
+        <div 
+          onClick={() => setIsBildirimAcik(false)} 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[90] transition-opacity"
+        ></div>
+      )}
+
+      {/* 💻 PC SOL MENÜ (SIDEBAR) */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full z-50">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm overflow-y-auto custom-scrollbar">
-          <button onClick={() => router.push('/dashboard/saha-haritasi')} className="w-full text-left p-4 bg-orange-600 hover:bg-orange-700 rounded-2xl flex items-center gap-3 transition-all shadow-lg animate-pulse mb-2">
+          
+          <button 
+            onClick={() => router.push('/dashboard/saha-haritasi')}
+            className="w-full text-left p-4 bg-orange-600 hover:bg-orange-700 rounded-2xl flex items-center gap-3 transition-all shadow-lg animate-pulse mb-2"
+          >
             <span className="text-xl">🛰️</span>
             <span className="font-black uppercase italic">Saha Haritası</span>
           </button>
+
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
-          <div onClick={() => router.push('/dashboard/bildirimler')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer flex justify-between items-center">
+          
+          {/* 🔔 BİLDİRİMLER BUTONU (ARTIK PANELİ AÇAR) */}
+          <div 
+            onClick={() => setIsBildirimAcik(true)} 
+            className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer flex justify-between items-center"
+          >
             <span>🔔 Bildirimler</span>
-            {bildirimSayisi > 0 && <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">{bildirimSayisi}</span>}
+            {bildirimSayisi > 0 && (
+              <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">
+                {bildirimSayisi}
+              </span>
+            )}
           </div>
+
           {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">📢 İhbar Kayıt</div>}
           {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">👤 Personel Yönetimi</div>}
           {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">👥 Çalışma Grupları</div>}
           {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer animate-pulse uppercase text-[12px]">📺 TV Paneli</div>}
           {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">📊 Raporlama</div>}
         </nav>
+
         <div className="mt-auto bg-blue-950/50 p-3 rounded-2xl border border-blue-800/50">
           <div className="flex justify-between items-start">
             <div>
@@ -150,22 +222,43 @@ export default function DashboardPage() {
           <button onClick={handleLogout} className="w-full mt-3 bg-red-600 p-2 rounded-xl font-black text-[10px] uppercase shadow-lg">ÇIKIŞ Yap</button>
         </div>
       </div>
+
+      {/* ANA İÇERİK ALANI */}
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold flex flex-col gap-6">
+        
+        {/* MOBİL ÜST BAR (ARTIK PANELİ AÇAR) */}
         <div className="md:hidden flex justify-between items-center bg-blue-900 p-4 rounded-2xl text-white shadow-lg">
           <h2 className="font-black italic">SAHA 360</h2>
-          <button onClick={() => router.push('/dashboard/bildirimler')} className="relative p-2">
+          <button onClick={() => setIsBildirimAcik(true)} className="relative p-2">
             <span className="text-xl">🔔</span>
             {bildirimSayisi > 0 && <span className="absolute top-0 right-0 bg-red-600 text-[8px] w-4 h-4 flex items-center justify-center rounded-full">{bildirimSayisi}</span>}
           </button>
         </div>
+
+        {/* HARİTA VE LİSTELER (Orijinal yapın aynen korundu) */}
         {!isSaha && (
           <div className="w-full bg-white rounded-[2.5rem] border-2 border-gray-200 overflow-hidden shadow-sm hidden md:block">
             <div className="p-4 bg-gray-800 text-white flex justify-between items-center font-black italic">
               <h3 className="text-[10px] uppercase tracking-widest text-white">🛰️ CANLI SAHA DURUMU // TERSANE</h3>
-              <button onClick={() => router.push('/dashboard/saha-haritasi')} className="text-[9px] bg-blue-600 px-4 py-1.5 rounded-full font-black text-white hover:bg-blue-700 transition-all shadow-lg">TAM EKRAN HARİTA →</button>
+              <button 
+                onClick={() => router.push('/dashboard/saha-haritasi')} 
+                className="text-[9px] bg-blue-600 px-4 py-1.5 rounded-full font-black text-white hover:bg-blue-700 transition-all shadow-lg"
+              >
+                TAM EKRAN HARİTA →
+              </button>
             </div>
+            
             <div className="h-[300px] bg-slate-100 relative">
-              <iframe id="saha-haritasi-frame" width="100%" height="100%" frameBorder="0" style={{ border: 0, filter: 'grayscale(0.2) contrast(1.1)' }} src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d4364.785224510651!2d29.510035505498912!3d40.732240003592516!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e1!3m2!1str!2str!4v1769106998126!5m2!1str!2str" allowFullScreen></iframe>
+              <iframe
+                id="saha-haritasi-frame"
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                style={{ border: 0, filter: 'grayscale(0.2) contrast(1.1)' }}
+                src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d4364.785224510651!2d29.510035505498912!3d40.732240003592516!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e1!3m2!1str!2str!4v1769106998126!5m2!1str!2str"
+                allowFullScreen
+              ></iframe>
+              
               <div className="absolute top-6 left-6 bg-white/90 backdrop-blur-md p-4 rounded-[2rem] shadow-2xl border border-gray-100 flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-blue-500/30">📡</div>
                 <div>
@@ -179,6 +272,7 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="flex flex-col bg-yellow-50 p-4 rounded-[2rem] border-2 border-yellow-200 h-[500px] overflow-hidden">
             <h3 className="text-[11px] font-black uppercase italic mb-4 text-yellow-700">🟡 Havuz ({stats.bekleyen})</h3>
@@ -194,6 +288,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
