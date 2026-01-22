@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useRouter } from 'next/navigation'
@@ -16,12 +15,11 @@ export default function DashboardPage() {
   
   const lastCountRef = useRef<number>(0)
 
-  // --- YETKİ KONTROLLERİ (Büyük/Küçük Harf Duyarsız) ---
+  // --- YETKİ KONTROLLERİ (Büyük/Küçük Harf ve Boşluk Duyarsız) ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
   const isAdmin = normalizedRole === 'ADMIN';
   const isSaha = normalizedRole === 'SAHA PERSONELI';
 
-  // Admin veya ilgili roller için yetkiler
   const canCreateJob = isAdmin || ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
   const canManageUsers = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
   const canSeeReports = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
@@ -117,7 +115,6 @@ export default function DashboardPage() {
   const JobCard = ({ ihbar }: { ihbar: any }) => {
     const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
     const isDelayed = ihbar.durum === 'Beklemede' && diff >= 30
-    const isUnassigned = !ihbar.atanan_personel && !ihbar.atanan_grup_id;
     const isOnHold = ihbar.durum === 'Durduruldu';
 
     return (
@@ -126,7 +123,6 @@ export default function DashboardPage() {
         className={`p-4 rounded-2xl shadow-sm border mb-3 cursor-pointer transition-all active:scale-[0.98] ${
           isDelayed ? 'bg-red-600 border-red-400 text-white animate-pulse shadow-lg' : 
           isOnHold ? 'bg-orange-50 border-orange-200 text-orange-900 border-l-8 border-l-orange-500' :
-          isUnassigned ? 'bg-blue-50 border-blue-200 border-dashed text-black hover:bg-blue-100' :
           'bg-white border-gray-100 text-black hover:shadow-md hover:border-blue-400'
         }`}
       >
@@ -170,7 +166,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push('/saha-haritasi')} className="bg-blue-600 p-2 rounded-xl text-[10px] font-black">🛰️ HARİTA</button>
+            <button onClick={() => router.push('/dashboard/saha-haritasi')} className="bg-blue-600 p-2 rounded-xl text-[10px] font-black">🛰️ HARİTA</button>
             <button onClick={handleLogout} className="bg-red-600 p-2 rounded-xl text-[10px] font-black uppercase">ÇIKIŞ</button>
           </div>
         </div>
@@ -187,8 +183,8 @@ export default function DashboardPage() {
         <nav className="space-y-3 flex-1 font-bold text-sm">
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
           
-          {/* HARİTA BUTONU: HERKES İÇİN GÖRÜNÜR YAPILDI */}
-          <div onClick={() => router.push('/saha-haritasi')} className="p-3 hover:bg-blue-800 bg-blue-950/20 rounded-xl cursor-pointer transition-all uppercase text-[11px] flex items-center gap-2 border border-white/5">🛰️ Saha Haritası</div>
+          {/* HARİTA BUTONU: ŞARTSIZ VE EN ÜSTE YAKIN */}
+          <div onClick={() => router.push('/dashboard/saha-haritasi')} className="p-3 hover:bg-orange-600 bg-orange-500/20 rounded-xl cursor-pointer transition-all uppercase text-[11px] flex items-center gap-2 border border-orange-500/30 text-white shadow-lg animate-pulse">🛰️ Saha Haritası</div>
           
           {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">📢 İhbar Kayıt</div>}
           {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">👤 Personel Yönetimi</div>}
@@ -211,15 +207,15 @@ export default function DashboardPage() {
         {!isSaha && (
           <div className="w-full bg-white rounded-[2.5rem] border-2 border-gray-200 overflow-hidden shadow-sm hidden md:block">
             <div className="p-4 bg-gray-800 text-white flex justify-between items-center">
-              <h3 className="text-[10px] font-black uppercase italic tracking-widest">🛰️ CANLI SAHA DURUMU</h3>
-              <button onClick={() => router.push('/saha-haritasi')} className="text-[9px] bg-blue-600 px-3 py-1 rounded-full font-black">TAM EKRAN HARİTA →</button>
+              <h3 className="text-[10px] font-black uppercase italic tracking-widest text-white">🛰️ CANLI SAHA DURUMU</h3>
+              <button onClick={() => router.push('/dashboard/saha-haritasi')} className="text-[9px] bg-blue-600 px-3 py-1 rounded-full font-black text-white">TAM EKRAN HARİTA →</button>
             </div>
-            <div className="h-[300px] bg-gray-200 relative">
+            <div className="h-[300px] bg-gray-100 relative">
                <iframe
                 width="100%"
                 height="100%"
                 frameBorder="0"
-                style={{ border: 0, filter: 'grayscale(0.3) contrast(1.1)' }}
+                style={{ border: 0, filter: 'grayscale(0.2) contrast(1.1)' }}
                 src="https://www.google.com/maps?q=$"
                 allowFullScreen
               ></iframe>
