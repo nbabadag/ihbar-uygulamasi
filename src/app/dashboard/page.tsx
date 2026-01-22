@@ -13,10 +13,8 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null)
   const [now, setNow] = useState(new Date())
   
-  // Yeni iş atamasını yakalamak için ref
   const lastCountRef = useRef<number>(0)
 
-  // --- YETKİ KONTROLLERİ ---
   const normalizedRole = userRole?.trim() || '';
   const isSaha = normalizedRole === 'Saha Personeli';
   const canCreateJob = ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
@@ -26,18 +24,17 @@ export default function DashboardPage() {
   const canManageGroups = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'].includes(normalizedRole);
   const seePool = ['Formen', 'Mühendis-Yönetici', 'Müdür', 'Çağrı Merkezi', 'Admin'].includes(normalizedRole);
 
-  // --- SESLİ İKAZ SİSTEMİ ---
   const playSound = (url: string) => {
     const audio = new Audio(url)
-    audio.play().catch(e => console.log("Ses çalınamadı (Etkileşim gerekiyor):", e))
+    audio.play().catch(e => console.log("Ses çalınamadı:", e))
   }
 
   const playAlert = useCallback(() => {
-    playSound('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3') // Gecikme sesi
+    playSound('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
   }, [])
 
   const playNewJobSound = () => {
-    playSound('https://assets.mixkit.co/active_storage/sfx/2211/2211-preview.mp3') // Yeni iş atama sesi
+    playSound('https://assets.mixkit.co/active_storage/sfx/2211/2211-preview.mp3')
   }
 
   const fetchData = useCallback(async (role: string, id: string) => {
@@ -52,7 +49,6 @@ export default function DashboardPage() {
     const { data: ihbarData } = await query.order('created_at', { ascending: false })
     
     if (ihbarData) {
-      // SAHA PERSONELİ İÇİN YENİ İŞ KONTROLÜ
       if (isSaha && ihbarData.length > lastCountRef.current && lastCountRef.current !== 0) {
         playNewJobSound()
       }
@@ -158,7 +154,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row text-black font-sans">
       
-      {/* 📱 MOBİL HEADER & DİKEY GÖRÜNÜM ÖZELLEŞTİRMESİ */}
+      {/* 📱 MOBİL HEADER */}
       <div className="md:hidden bg-blue-950 text-white p-4 sticky top-0 z-50 shadow-xl border-b border-blue-800">
         <div className="flex justify-between items-center mb-4">
           <div className="flex flex-col">
@@ -169,34 +165,28 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {canSeeReports && (
-              <button onClick={() => router.push('/dashboard/raporlar')} className="bg-blue-600 p-2 rounded-xl text-[10px] font-black shadow-lg">📊 RAPOR</button>
-            )}
-            <button onClick={handleLogout} className="bg-red-600 p-2 rounded-xl text-[10px] font-black uppercase border-b-2 border-red-800">ÇIKIŞ</button>
+            <button onClick={() => router.push('/saha-haritasi')} className="bg-blue-600 p-2 rounded-xl text-[10px] font-black">🛰️ HARİTA</button>
+            <button onClick={handleLogout} className="bg-red-600 p-2 rounded-xl text-[10px] font-black uppercase">ÇIKIŞ</button>
           </div>
         </div>
-
-        {/* DİKEY GÖRÜNÜMDE HIZLI İHBAR KAYDI BUTONU (SAHA HARİÇ YETKİLİLERE) */}
         {!isSaha && canCreateJob && (
-          <button 
-            onClick={() => router.push('/dashboard/yeni-ihbar')}
-            className="w-full bg-orange-500 text-white p-4 rounded-2xl font-black text-xs uppercase italic animate-bounce shadow-xl border-b-4 border-orange-700 active:scale-95"
-          >
+          <button onClick={() => router.push('/dashboard/yeni-ihbar')} className="w-full bg-orange-500 text-white p-4 rounded-2xl font-black text-xs uppercase italic animate-bounce shadow-xl border-b-4 border-orange-700 active:scale-95">
             + YENİ İHBAR KAYDI AÇ
           </button>
         )}
       </div>
 
-      {/* 💻 PC SOL MENÜ */}
+      {/* 💻 PC SOL MENÜ (SIDEBAR) */}
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm">
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
-          {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[12px]">📢 İhbar Kayıt</div>}
-          {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[12px]">👤 Personel Yönetimi</div>}
-          {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[12px]">👥 Çalışma Grupları</div>}
-          {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer animate-pulse transition-all uppercase text-[12px]">📺 TV Paneli</div>}
-          {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[12px]">📊 Raporlama</div>}
+          <div onClick={() => router.push('/saha-haritasi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px] flex items-center gap-2">🛰️ Saha Haritası</div>
+          {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">📢 İhbar Kayıt</div>}
+          {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">👤 Personel Yönetimi</div>}
+          {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">👥 Çalışma Grupları</div>}
+          {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600 rounded-xl cursor-pointer animate-pulse transition-all uppercase text-[11px]">📺 TV Paneli</div>}
+          {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">📊 Raporlama</div>}
         </nav>
         <div className="mt-auto border-t border-blue-800 pt-4 space-y-4">
           <div className="bg-blue-950/50 p-3 rounded-2xl border border-blue-800/50">
@@ -207,7 +197,33 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold">
+      <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold flex flex-col gap-6">
+        
+        {/* HARİTA WIDGET (YENİ EKLEDİĞİMİZ KISIM) */}
+        {!isSaha && (
+          <div className="w-full bg-white rounded-[2.5rem] border-2 border-gray-200 overflow-hidden shadow-sm hidden md:block">
+            <div className="p-4 bg-gray-800 text-white flex justify-between items-center">
+              <h3 className="text-[10px] font-black uppercase italic tracking-widest">🛰️ CANLI SAHA DURUMU</h3>
+              <button onClick={() => router.push('/saha-haritasi')} className="text-[9px] bg-blue-600 px-3 py-1 rounded-full font-black">TAM EKRAN HARİTA →</button>
+            </div>
+            <div className="h-[300px] bg-gray-200 relative">
+               <iframe
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                style={{ border: 0, filter: 'grayscale(0.5) contrast(1.1)' }}
+                src="https://www.google.com/maps?q=$"
+                allowFullScreen
+              ></iframe>
+              <div className="absolute top-4 left-4 bg-white/95 p-3 rounded-2xl shadow-xl border border-gray-100">
+                <p className="text-[8px] font-black text-blue-600 uppercase">Aktif Çalışan</p>
+                <p className="text-xl font-black text-gray-800">{stats.islemde}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* İŞ LİSTELERİ SÜTUNLARI */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {seePool && (
             <div className="flex flex-col bg-yellow-50/50 rounded-[2rem] border-2 border-yellow-200 shadow-sm overflow-hidden h-[450px] md:h-[calc(100vh-100px)]">
