@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useRouter } from 'next/navigation'
@@ -181,7 +182,10 @@ export default function DashboardPage() {
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm">
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
-          <div onClick={() => router.push('/saha-haritasi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px] flex items-center gap-2">🛰️ Saha Haritası</div>
+          
+          {/* HARİTA BUTONU: HERKES İÇİN GÖRÜNÜR YAPILDI */}
+          <div onClick={() => router.push('/saha-haritasi')} className="p-3 hover:bg-blue-800 bg-blue-950/20 rounded-xl cursor-pointer transition-all uppercase text-[11px] flex items-center gap-2 border border-white/5">🛰️ Saha Haritası</div>
+          
           {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">📢 İhbar Kayıt</div>}
           {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">👤 Personel Yönetimi</div>}
           {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer transition-all uppercase text-[11px]">👥 Çalışma Grupları</div>}
@@ -199,7 +203,7 @@ export default function DashboardPage() {
 
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold flex flex-col gap-6">
         
-        {/* HARİTA WIDGET (YENİ EKLEDİĞİMİZ KISIM) */}
+        {/* HARİTA WIDGET (ANA EKRAN PENCERESİ) */}
         {!isSaha && (
           <div className="w-full bg-white rounded-[2.5rem] border-2 border-gray-200 overflow-hidden shadow-sm hidden md:block">
             <div className="p-4 bg-gray-800 text-white flex justify-between items-center">
@@ -211,7 +215,7 @@ export default function DashboardPage() {
                 width="100%"
                 height="100%"
                 frameBorder="0"
-                style={{ border: 0, filter: 'grayscale(0.5) contrast(1.1)' }}
+                style={{ border: 0, filter: 'grayscale(0.3) contrast(1.1)' }}
                 src="https://www.google.com/maps?q=$"
                 allowFullScreen
               ></iframe>
