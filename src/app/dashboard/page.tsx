@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [bildirimSayisi, setBildirimSayisi] = useState(0)
   const lastCountRef = useRef<number>(0)
 
+  // --- YETKİ KONTROLLERİ ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
   const isAdmin = normalizedRole === 'ADMIN';
   const isSaha = normalizedRole === 'SAHA PERSONELI';
@@ -65,11 +66,9 @@ export default function DashboardPage() {
         setUserName(profile?.full_name || 'Kullanıcı')
         setUserRole(currentRole)
         
-        // Veriyi ilk kez çek
         fetchData(currentRole, user.id)
 
-        // --- 📡 CANLI DİNLEME (REALTIME) ---
-        // Veritabanında bir şey değiştiğinde (INSERT, UPDATE) sayfayı otomatik yeniler
+        // --- 📡 CANLI DİNLEME (REALTIME) GERİ EKLENDİ ---
         channel = supabase
           .channel('db-changes')
           .on(
@@ -90,10 +89,7 @@ export default function DashboardPage() {
     }
     
     checkUser()
-    
     const timer = setInterval(() => setNow(new Date()), 60000)
-    
-    // Temizlik: Sayfa kapanınca dinlemeyi durdur
     return () => {
       clearInterval(timer);
       if (channel) supabase.removeChannel(channel);
@@ -128,24 +124,14 @@ export default function DashboardPage() {
       <div className="hidden md:flex w-64 bg-blue-900 text-white p-6 shadow-xl flex-col fixed h-full z-50">
         <h2 className="text-xl font-black mb-8 italic uppercase text-blue-100 tracking-tighter">Saha 360</h2>
         <nav className="space-y-3 flex-1 font-bold text-sm overflow-y-auto custom-scrollbar">
-          <button 
-            onClick={() => router.push('/dashboard/saha-haritasi')}
-            className="w-full text-left p-4 bg-orange-600 hover:bg-orange-700 rounded-2xl flex items-center gap-3 transition-all shadow-lg animate-pulse mb-2"
-          >
+          <button onClick={() => router.push('/dashboard/saha-haritasi')} className="w-full text-left p-4 bg-orange-600 hover:bg-orange-700 rounded-2xl flex items-center gap-3 transition-all shadow-lg animate-pulse mb-2">
             <span className="text-xl">🛰️</span>
             <span className="font-black uppercase italic">Saha Haritası</span>
           </button>
           <div onClick={() => router.push('/dashboard')} className="p-3 bg-blue-800 rounded-xl cursor-pointer flex items-center gap-2 border-l-4 border-blue-400">🏠 Ana Sayfa</div>
-          <div 
-            onClick={() => router.push('/dashboard/bildirimler')} 
-            className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer flex justify-between items-center"
-          >
+          <div onClick={() => router.push('/dashboard/bildirimler')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer flex justify-between items-center">
             <span>🔔 Bildirimler</span>
-            {bildirimSayisi > 0 && (
-              <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">
-                {bildirimSayisi}
-              </span>
-            )}
+            {bildirimSayisi > 0 && <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce">{bildirimSayisi}</span>}
           </div>
           {canCreateJob && <div onClick={() => router.push('/dashboard/yeni-ihbar')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">📢 İhbar Kayıt</div>}
           {canManageUsers && <div onClick={() => router.push('/dashboard/personel-yonetimi')} className="p-3 hover:bg-blue-800 rounded-xl cursor-pointer">👤 Personel Yönetimi</div>}
