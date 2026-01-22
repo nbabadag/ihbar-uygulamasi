@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react' // Suspense eklendi
 import { createClient } from '@supabase/supabase-js'
 import { useSearchParams } from 'next/navigation'
 
@@ -8,7 +8,8 @@ const supabasePublic = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export default function PublicIhbar() {
+// Ana form içeriği ayrı bir fonksiyon olarak dışarı alındı
+function İhbarFormu() {
   const searchParams = useSearchParams()
   const urlBirim = searchParams.get('birim')
   
@@ -25,18 +26,13 @@ export default function PublicIhbar() {
     if (urlBirim) setForm(prev => ({ ...prev, birim: urlBirim }))
   }, [urlBirim])
 
-  // --- 🛰️ GPS YAKALAMA FONKSİYONU ---
   const getGPS = (): Promise<string> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) { resolve("GPS Desteklenmiyor"); return; }
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
         () => resolve("Konum Reddedildi"),
-        { 
-          enableHighAccuracy: true, // 🎯 Yüksek hassasiyetli GPS (Tersane için kritik)
-          timeout: 10000, 
-          maximumAge: 0 
-        }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     });
   };
@@ -44,10 +40,7 @@ export default function PublicIhbar() {
   const kaydet = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    
-    // Gönder tuşuna basıldığı an konum çekiliyor
     const gpsKonum = await getGPS();
-    
     const simdi = new Date()
     const toplamDakika = simdi.getHours() * 60 + simdi.getMinutes()
     const isMesai = toplamDakika >= 481 && toplamDakika <= 1004
@@ -55,11 +48,10 @@ export default function PublicIhbar() {
     const ihbarVerisi = {
       musteri_adi: form.birim || 'SAHA GENEL',
       konu: form.konu,
-      // GPS bilgisini açıklama metnine de ekliyoruz ki her yerden görülsün
       aciklama: `${form.ad_soyad} (Tel: ${form.tel}) [GPS: ${gpsKonum}]: ${form.aciklama}`,
       durum: 'Beklemede',
       oncelik_durumu: isMesai ? 'NORMAL' : 'VARDİYA_MODU',
-      guncel_konum: gpsKonum, // Veritabanındaki harita koordinatı
+      guncel_konum: gpsKonum,
       olusturma_tarihi: new Date().toISOString()
     }
 
@@ -76,12 +68,7 @@ export default function PublicIhbar() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0b0e] flex items-center justify-center p-4 font-sans text-white relative">
-      <div className="fixed inset-0 opacity-5 pointer-events-none flex items-center justify-center">
-        <img src="/logo.png" className="w-96" />
-      </div>
-
-      <div className="max-w-md w-full bg-[#111318]/95 backdrop-blur-2xl p-8 rounded-[3rem] border border-gray-800 shadow-2xl relative z-10">
+    <div className="max-w-md w-full bg-[#111318]/95 backdrop-blur-2xl p-8 rounded-[3rem] border border-gray-800 shadow-2xl relative z-10">
         <div className="text-center mb-6">
           <img src="/logo.png" className="w-16 mx-auto mb-3" />
           <h1 className="text-2xl font-black uppercase italic text-orange-500 tracking-tighter">Hızlı İhbar & GPS</h1>
@@ -103,11 +90,24 @@ export default function PublicIhbar() {
           
           <textarea required placeholder="Lütfen sorunu açıklayın..." className="w-full bg-black/40 border border-gray-800 p-4 rounded-2xl font-black text-xs h-32 outline-none focus:border-gray-600" value={form.aciklama} onChange={e => setForm({...form, aciklama: e.target.value})} />
 
-          <button type="submit" disabled={loading} className="w-full bg-orange-600 hover:bg-orange-700 py-6 rounded-3xl font-black uppercase italic tracking-tighter shadow-xl shadow-orange-900/20 transition-all active:scale-95 disabled:opacity-50 text-lg">
+          <button type="submit" disabled={loading} className="w-full bg-orange-600 hover:bg-orange-700 py-6 rounded-3xl font-black uppercase italic tracking-tighter shadow-xl shadow-orange-900/20 transition-all active:scale-95 disabled:opacity-50 text-lg text-white">
             {loading ? 'KONUM ALINIYOR...' : 'İHBARI GÖNDER 🚀'}
           </button>
         </form>
+    </div>
+  )
+}
+
+// Ana sayfa exportu Suspense ile sarmalandı
+export default function PublicIhbar() {
+  return (
+    <div className="min-h-screen bg-[#0a0b0e] flex items-center justify-center p-4 font-sans text-white relative">
+      <div className="fixed inset-0 opacity-5 pointer-events-none flex items-center justify-center">
+        <img src="/logo.png" className="w-96" />
       </div>
+      <Suspense fallback={<div className="font-black uppercase italic text-orange-500 animate-pulse">Sistem Yükleniyor...</div>}>
+        <İhbarFormu />
+      </Suspense>
     </div>
   )
 }
