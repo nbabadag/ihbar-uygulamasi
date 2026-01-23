@@ -72,12 +72,11 @@ export default function IhbarDetay() {
       setUserRole(profile?.role || '')
     }
 
-    // HATALARIN DÜZELTİLDİĞİ SORGU BÖLÜMÜ
     const [ihbarRes, pRes, mRes, kmRes, nRes] = await Promise.all([
-      supabase.from('ihbarlar').select(`*, profiles (full_name)`).eq('id', id).single(),
+      supabase.from('ihbarlar').select(`*, profiles:atanan_personel(full_name)`).eq('id', id).single(),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
       supabase.from('malzemeler').select('*').order('malzeme_adi'),
-      supabase.from('ihbar_malzemeleri').select('*').eq('ihbar_id', id), // Malzemeleri doğru çekiyoruz
+      supabase.from('ihbar_malzemeleri').select('*').eq('ihbar_id', id),
       supabase.from('teknik_nesneler').select('*').order('nesne_adi')
     ])
 
@@ -94,7 +93,7 @@ export default function IhbarDetay() {
     }
     setPersoneller(pRes.data || [])
     setMalzemeKatalog(mRes.data || [])
-    setKullanilanlar(kmRes.data || []) // State güncelleniyor
+    setKullanilanlar(kmRes.data || [])
     setNesneListesi(nRes.data || [])
   }, [id])
 
@@ -174,10 +173,10 @@ export default function IhbarDetay() {
     <div className="min-h-screen flex flex-col text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
       <div className="fixed inset-0 z-0 opacity-20 pointer-events-none" style={{ backgroundImage: "url('/logo.png')", backgroundSize: '80%', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', filter: 'brightness(0.5) contrast(1.2) grayscale(0.5)' }}></div>
       <div className="p-3 md:p-8 max-w-7xl mx-auto space-y-6 relative z-10 w-full">
-        <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-4 rounded-2xl shadow-2xl border border-gray-800">
-          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/20"> GERİ DÖN </button>
+        <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-4 rounded-2xl shadow-2xl border border-gray-800 font-black">
+          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/20 font-black"> GERİ DÖN </button>
           <div className="flex items-center gap-4 font-black">
-            <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain font-black" />
+            <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
             <div className="text-[10px] font-black text-orange-500 uppercase italic border-l border-gray-700 pl-4 tracking-widest font-black"> {ihbar.ifs_is_emri_no || 'IFS KAYDI YOK'} </div>
           </div>
         </div>
@@ -190,43 +189,43 @@ export default function IhbarDetay() {
                 <p className="text-lg text-blue-400 font-bold uppercase italic tracking-tight font-black">{ihbar.konu}</p>
               </div>
               
-              {/* DÜZELTİLEN AÇIKLAMA ALANI */}
-              <div className="bg-black/30 p-8 rounded-3xl border border-gray-800 mb-8 italic text-gray-300 leading-relaxed text-sm shadow-inner font-black"> 
-                "{ihbar.aciklama || 'Açıklama belirtilmemiş.'}" 
+              {/* --- 🚨 BURASI: İHBAR AÇIKLAMASI --- */}
+              <div className="bg-black/30 p-8 rounded-3xl border border-gray-800 mb-4 italic text-gray-300 leading-relaxed text-sm shadow-inner font-black"> 
+                "{ihbar.aciklama || 'İhbar açıklaması bulunamadı.'}" 
               </div>
 
+              {/* --- 🚨 BURASI: PERSONEL İŞ SONU NOTU --- */}
+              {ihbar.personel_notu && (
+                <div className="bg-orange-600/10 p-8 rounded-3xl border border-orange-500/30 mb-8 italic text-orange-400 leading-relaxed text-sm shadow-inner font-black">
+                  <span className="block text-[8px] font-black uppercase mb-1 not-italic text-orange-500 tracking-widest">🔧 PERSONEL İŞ SONU NOTU:</span>
+                  "{ihbar.personel_notu}"
+                </div>
+              )}
+
               <div className="bg-[#111318] p-6 rounded-[2.5rem] border border-blue-500/30 mb-8 shadow-2xl relative overflow-visible z-[50] font-black">
-                <h3 className="text-blue-400 text-[10px] font-black uppercase italic mb-4 tracking-widest flex items-center gap-2 font-black font-black">
-                  <span className="animate-pulse font-black font-black">●</span> TEKNİK NESNE / VARLIK SEÇİMİ
+                <h3 className="text-blue-400 text-[10px] font-black uppercase italic mb-4 tracking-widest flex items-center gap-2 font-black">
+                  <span className="animate-pulse font-black">●</span> TEKNİK NESNE / VARLIK SEÇİMİ
                 </h3>
                 {secilenNesne ? (
                   <div className="flex items-center justify-between bg-blue-600/10 border border-blue-500/40 p-4 rounded-2xl mb-4 font-black">
                     <div className="font-black">
-                      <div className="text-white text-xs font-black uppercase font-black font-black">{secilenNesne.nesne_adi}</div>
-                      <div className="text-blue-400 text-[9px] font-black mt-1 uppercase font-black font-black">IFS KODU: {secilenNesne.ifs_kodu}</div>
+                      <div className="text-white text-xs font-black uppercase font-black">{secilenNesne.nesne_adi}</div>
+                      <div className="text-blue-400 text-[9px] font-black mt-1 uppercase font-black">IFS KODU: {secilenNesne.ifs_kodu}</div>
                     </div>
-                    <button onClick={async () => { await supabase.from('ihbarlar').update({ secilen_nesne_adi: null }).eq('id', id); setSecilenNesne(null); }} className="bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white p-2 rounded-xl transition-all text-[8px] font-black font-black">DEĞİŞTİR</button>
+                    <button onClick={async () => { await supabase.from('ihbarlar').update({ secilen_nesne_adi: null }).eq('id', id); setSecilenNesne(null); }} className="bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white p-2 rounded-xl transition-all text-[8px] font-black">DEĞİŞTİR</button>
                   </div>
                 ) : (
                   <div className="relative overflow-visible font-black">
-                    <input 
-                      type="text" 
-                      placeholder="TEKNİK NESNE ARA (ÖRN: 32 NOLU VİNÇ...)" 
-                      className="w-full p-4 bg-black/50 border border-gray-800 rounded-2xl text-[10px] text-white outline-none focus:border-blue-500 transition-all font-black font-black font-black" 
-                      value={nesneSearch} 
-                      onChange={(e) => setNesneSearch(e.target.value.toUpperCase())} 
-                    />
+                    <input type="text" placeholder="TEKNİK NESNE ARA..." className="w-full p-4 bg-black/50 border border-gray-800 rounded-2xl text-[10px] text-white outline-none focus:border-blue-500 transition-all font-black" value={nesneSearch} onChange={(e) => setNesneSearch(e.target.value.toUpperCase())} />
                     {nesneSearch && (
                       <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-60 overflow-y-auto z-[999] shadow-[0_20px_50px_rgba(0,0,0,0.9)] custom-scrollbar font-black">
-                        {nesneListesi
-                          .filter(n => (n.nesne_adi && n.nesne_adi.includes(nesneSearch)) || (n.ifs_kodu && n.ifs_kodu.includes(nesneSearch)))
-                          .map(n => (
-                          <div key={n.id} onClick={() => nesneAta(n)} className="p-4 hover:bg-blue-600/20 border-b border-gray-800/50 cursor-pointer flex justify-between items-center transition-colors font-black font-black">
+                        {nesneListesi.filter(n => (n.nesne_adi && n.nesne_adi.includes(nesneSearch)) || (n.ifs_kodu && n.ifs_kodu.includes(nesneSearch))).map(n => (
+                          <div key={n.id} onClick={() => nesneAta(n)} className="p-4 hover:bg-blue-600/20 border-b border-gray-800/50 cursor-pointer flex justify-between items-center transition-colors font-black">
                             <div className="font-black">
-                              <div className="text-[10px] font-black text-white font-black font-black">{n.nesne_adi}</div>
+                              <div className="text-[10px] font-black text-white font-black">{n.nesne_adi}</div>
                               <div className="text-[8px] text-gray-500 font-black font-black">{n.ifs_kodu || 'KOD YOK'}</div>
                             </div>
-                            <div className="text-blue-500 text-[10px] font-black font-black italic uppercase">SEÇ →</div>
+                            <div className="text-blue-500 text-[10px] font-black italic uppercase font-black">SEÇ →</div>
                           </div>
                         ))}
                       </div>
@@ -235,25 +234,24 @@ export default function IhbarDetay() {
                 )}
               </div>
 
-              {/* DÜZELTİLEN MALZEME TABLOSU */}
               <div className="mt-10 font-black">
-                <h3 className="font-black text-[10px] text-gray-500 uppercase mb-4 italic tracking-widest text-white font-black font-black">📦 MALZEME SARFİYATI</h3>
-                <div className="overflow-hidden rounded-3xl border border-gray-800 shadow-2xl font-black font-black">
+                <h3 className="font-black text-[10px] text-gray-500 uppercase mb-4 italic tracking-widest text-white font-black">📦 MALZEME SARFİYATI</h3>
+                <div className="overflow-hidden rounded-3xl border border-gray-800 shadow-2xl font-black">
                   <table className="w-full text-left font-black">
-                    <thead className="bg-[#111318] text-orange-500 text-[9px] font-black uppercase italic tracking-widest font-black font-black">
+                    <thead className="bg-[#111318] text-orange-500 text-[9px] font-black uppercase italic tracking-widest font-black">
                       <tr><th className="p-4 font-black">KOD</th><th className="p-4 font-black">MALZEME</th><th className="p-4 text-right font-black">ADET</th></tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-800 text-xs font-bold uppercase italic text-gray-200 bg-black/20 font-black font-black">
-                      {kullanilanlar.length === 0 ? ( 
-                        <tr><td colSpan={3} className="p-10 text-center text-gray-600 tracking-tighter font-black font-black">Henüz sarfiyat girilmedi</td></tr> 
-                      ) : ( 
+                    <tbody className="divide-y divide-gray-800 text-xs font-bold uppercase italic text-gray-200 bg-black/20 font-black">
+                      {kullanilanlar && kullanilanlar.length > 0 ? ( 
                         kullanilanlar.map((k, index) => ( 
-                          <tr key={k.id || index} className="hover:bg-white/5 transition-colors font-black font-black">
-                            <td className="p-4 text-orange-400 font-black font-black">{k.malzeme_kodu}</td>
-                            <td className="p-4 font-black font-black">{k.malzeme_adi}</td>
-                            <td className="p-4 text-right text-blue-400 font-black font-black font-black">{k.kullanim_adedi}</td>
+                          <tr key={k.id || index} className="hover:bg-white/5 transition-colors font-black">
+                            <td className="p-4 text-orange-400 font-black">{k.malzeme_kodu}</td>
+                            <td className="p-4 font-black">{k.malzeme_adi}</td>
+                            <td className="p-4 text-right text-blue-400 font-black font-black">{k.kullanim_adedi}</td>
                           </tr> 
                         )) 
+                      ) : ( 
+                        <tr><td colSpan={3} className="p-10 text-center text-gray-600 tracking-tighter font-black">Henüz sarfiyat girilmedi</td></tr> 
                       )}
                     </tbody>
                   </table>
@@ -261,55 +259,55 @@ export default function IhbarDetay() {
               </div>
             </div>
           </div>
-          <div className="space-y-6 font-black font-black">
+          <div className="space-y-6 font-black">
             {ihbar.durum === 'Calisiliyor' ? (
-              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-2xl border border-orange-500/30 font-black font-black font-black">
-                <h3 className="font-black text-lg mb-6 text-white italic uppercase flex items-center gap-3 font-black font-black"> <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(249,115,22,1)] text-white font-black font-black"></span> İŞLEM PANELİ </h3>
-                <div className="space-y-4 mb-6 font-black font-black font-black">
-                  <input type="text" placeholder="🔍 MALZEME ARA..." className="w-full p-4 border border-gray-700 rounded-2xl font-black text-[10px] bg-black/40 text-white placeholder-gray-500 outline-none font-black font-black font-black" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
+              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-2xl border border-orange-500/30 font-black">
+                <h3 className="font-black text-lg mb-6 text-white italic uppercase flex items-center gap-3 font-black"> <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(249,115,22,1)] text-white font-black"></span> İŞLEM PANELİ </h3>
+                <div className="space-y-4 mb-6 font-black">
+                  <input type="text" placeholder="🔍 MALZEME ARA..." className="w-full p-4 border border-gray-700 rounded-2xl font-black text-[10px] bg-black/40 text-white placeholder-gray-500 outline-none font-black" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
                   {searchTerm && (
-                    <div className="bg-[#111318] border border-gray-700 rounded-xl max-h-40 overflow-auto shadow-2xl z-20 relative custom-scrollbar font-black font-black font-black">
-                      {malzemeKatalog.filter(m => m.malzeme_adi.toLowerCase().includes(searchTerm.toLowerCase())).map(m => ( <div key={m.id} onClick={()=>{setSecilenMalzeme(m); setSearchTerm('')}} className="p-4 hover:bg-orange-600/10 cursor-pointer text-[9px] font-black border-b border-gray-800 uppercase flex justify-between text-gray-300 font-black font-black font-black"> <span>{m.malzeme_adi}</span><span className="text-orange-500 font-black font-black font-black">[{m.malzeme_kodu}]</span> </div> ))}
+                    <div className="bg-[#111318] border border-gray-700 rounded-xl max-h-40 overflow-auto shadow-2xl z-20 relative custom-scrollbar font-black">
+                      {malzemeKatalog.filter(m => m.malzeme_adi.toLowerCase().includes(searchTerm.toLowerCase())).map(m => ( <div key={m.id} onClick={()=>{setSecilenMalzeme(m); setSearchTerm('')}} className="p-4 hover:bg-orange-600/10 cursor-pointer text-[9px] font-black border-b border-gray-800 uppercase flex justify-between text-gray-300 font-black"> <span>{m.malzeme_adi}</span><span className="text-orange-500 font-black">[{m.malzeme_kodu}]</span> </div> ))}
                     </div>
                   )}
                   {secilenMalzeme && (
-                    <div className="flex items-center gap-2 p-4 bg-orange-600/10 rounded-2xl border border-orange-500/30 shadow-inner font-black font-black font-black font-black">
-                      <span className="text-[9px] font-black uppercase flex-1 truncate text-white font-black font-black font-black font-black font-black">✅ {secilenMalzeme.malzeme_adi}</span>
-                      <input type="number" className="w-16 p-2 bg-black/50 border border-gray-700 rounded-lg font-black text-center text-white font-black font-black font-black font-black" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
-                      <button onClick={malzemeEkle} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-black text-[9px] font-black font-black font-black">EKLE</button>
+                    <div className="flex items-center gap-2 p-4 bg-orange-600/10 rounded-2xl border border-orange-500/30 shadow-inner font-black">
+                      <span className="text-[9px] font-black uppercase flex-1 truncate text-white font-black">✅ {secilenMalzeme.malzeme_adi}</span>
+                      <input type="number" className="w-16 p-2 bg-black/50 border border-gray-700 rounded-lg font-black text-center text-white" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
+                      <button onClick={malzemeEkle} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-black text-[9px] font-black">EKLE</button>
                     </div>
                   )}
                 </div>
-                <textarea className="w-full p-4 border border-gray-700 rounded-2xl bg-black/40 text-[11px] font-black mb-6 text-white placeholder-gray-500 outline-none font-black font-black font-black" placeholder="İşlem notu girin..." rows={5} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
-                <div className="flex flex-col gap-3 font-black font-black font-black">
-                    <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-3xl font-black shadow-xl uppercase italic text-xl active:scale-95 transition-all font-black font-black">🏁 İŞİ BİTİR</button>
-                    <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-orange-600/20 text-orange-500 border border-orange-600/30 py-4 rounded-3xl font-black shadow-lg uppercase italic text-[10px] active:scale-95 transition-all font-black font-black">⚠️ İŞİ DURDUR</button>
+                <textarea className="w-full p-4 border border-gray-700 rounded-2xl bg-black/40 text-[11px] font-black mb-6 text-white placeholder-gray-500 outline-none font-black" placeholder="İşlem notu girin..." rows={5} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
+                <div className="flex flex-col gap-3 font-black">
+                    <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-3xl font-black shadow-xl uppercase italic text-xl active:scale-95 transition-all font-black">🏁 İŞİ BİTİR</button>
+                    <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-orange-600/20 text-orange-500 border border-orange-600/30 py-4 rounded-3xl font-black shadow-lg uppercase italic text-[10px] active:scale-95 transition-all font-black">⚠️ İŞİ DURDUR</button>
                 </div>
               </div>
             ) : ihbar.durum !== 'Tamamlandi' && (
-              <button onClick={isiBaslat} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-12 rounded-[3rem] font-black shadow-2xl uppercase italic text-3xl animate-pulse active:scale-95 transition-all font-black font-black font-black">🚀 İŞE BAŞLA</button>
+              <button onClick={isiBaslat} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-12 rounded-[3rem] font-black shadow-2xl uppercase italic text-3xl animate-pulse active:scale-95 transition-all font-black">🚀 İŞE BAŞLA</button>
             )}
             
             {canEditAssignment && (
-              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-xl border-t-8 border-orange-600 font-black font-black font-black">
-                <h3 className="font-black text-[10px] uppercase text-white mb-6 italic tracking-[0.2em] font-black font-black font-black">YÖNETİCİ KONTROLLERİ</h3>
-                <div className="space-y-4 font-black font-black font-black">
-                  <div className="space-y-1 font-black font-black">
-                    <p className="text-[8px] font-black text-gray-600 ml-4 font-black font-black font-black">IFS İŞ EMRİ NO</p>
-                    <input placeholder="GİRİŞ YAPIN..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] text-orange-500 outline-none font-black font-black font-black font-black" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
+              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-xl border-t-8 border-orange-600 font-black">
+                <h3 className="font-black text-[10px] uppercase text-white mb-6 italic tracking-[0.2em] font-black">YÖNETİCİ KONTROLLERİ</h3>
+                <div className="space-y-4 font-black">
+                  <div className="space-y-1 font-black">
+                    <p className="text-[8px] font-black text-gray-600 ml-4 font-black">IFS İŞ EMRİ NO</p>
+                    <input placeholder="GİRİŞ YAPIN..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] text-orange-500 outline-none font-black" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
                   </div>
-                  <div className="space-y-1 font-black font-black font-black">
-                    <p className="text-[8px] font-black text-gray-600 ml-4 font-black font-black font-black font-black">PERSONEL ATAMASI</p>
-                    <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] uppercase text-white outline-none font-black font-black font-black">
-                      <option value="" className="font-black font-black">PERSONEL SEÇİN...</option>
-                      {personeller.map(p => <option key={p.id} value={p.id} className="bg-[#1a1c23] font-black font-black font-black font-black">{p.full_name}</option>)}
+                  <div className="space-y-1 font-black">
+                    <p className="text-[8px] font-black text-gray-600 ml-4 font-black">PERSONEL ATAMASI</p>
+                    <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] uppercase text-white outline-none font-black">
+                      <option value="" className="font-black">PERSONEL SEÇİN...</option>
+                      {personeller.map(p => <option key={p.id} value={p.id} className="bg-[#1a1c23] font-black">{p.full_name}</option>)}
                     </select>
                   </div>
-                  <button onClick={async () => { await supabase.from('ihbarlar').update({ atanan_personel: seciliAtanan, ifs_is_emri_no: ifsNo }).eq('id', id); fetchData(); alert("İş Emri ve Personel Güncellendi."); }} className="w-full bg-white text-black py-4 rounded-2xl font-black text-[9px] uppercase hover:bg-orange-500 hover:text-white transition-all duration-300 font-black font-black font-black">BİLGİLERİ GÜNCELLE</button>
+                  <button onClick={async () => { await supabase.from('ihbarlar').update({ atanan_personel: seciliAtanan, ifs_is_emri_no: ifsNo }).eq('id', id); fetchData(); alert("İş Emri ve Personel Güncellendi."); }} className="w-full bg-white text-black py-4 rounded-2xl font-black text-[9px] uppercase hover:bg-orange-500 hover:text-white transition-all duration-300 font-black">BİLGİLERİ GÜNCELLE</button>
                 </div>
               </div>
             )}
-            {canReleaseToPool && ( <button onClick={handleHavuzaAl} className="w-full text-gray-600 hover:text-red-500 font-black uppercase italic text-[8px] pt-4 transition-all tracking-widest text-white font-black font-black">❌ BU İŞİ HAVUZA GERİ GÖNDER</button> )}
+            {canReleaseToPool && ( <button onClick={handleHavuzaAl} className="w-full text-gray-600 hover:text-red-500 font-black uppercase italic text-[8px] pt-4 transition-all tracking-widest text-white font-black">❌ BU İŞİ HAVUZA GERİ GÖNDER</button> )}
           </div>
         </div>
       </div>
