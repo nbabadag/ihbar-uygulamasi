@@ -72,11 +72,12 @@ export default function IhbarDetay() {
       setUserRole(profile?.role || '')
     }
 
+    // HATALARIN DÜZELTİLDİĞİ SORGU BÖLÜMÜ
     const [ihbarRes, pRes, mRes, kmRes, nRes] = await Promise.all([
       supabase.from('ihbarlar').select(`*, profiles (full_name)`).eq('id', id).single(),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
       supabase.from('malzemeler').select('*').order('malzeme_adi'),
-      supabase.from('ihbar_malzemeleri').select('*').eq('ihbar_id', id),
+      supabase.from('ihbar_malzemeleri').select('*').eq('ihbar_id', id), // Malzemeleri doğru çekiyoruz
       supabase.from('teknik_nesneler').select('*').order('nesne_adi')
     ])
 
@@ -93,7 +94,7 @@ export default function IhbarDetay() {
     }
     setPersoneller(pRes.data || [])
     setMalzemeKatalog(mRes.data || [])
-    setKullanilanlar(kmRes.data || [])
+    setKullanilanlar(kmRes.data || []) // State güncelleniyor
     setNesneListesi(nRes.data || [])
   }, [id])
 
@@ -149,7 +150,6 @@ export default function IhbarDetay() {
     await supabase.from('ihbarlar').update(updates).eq('id', id);
     await supabase.from('is_zamanlari').update({ bitis_tarihi: simdi, durum: yeniDurum, personel_notu: personelNotu }).eq('ihbar_id', id).is('bitis_tarihi', null);
     
-    // Bildirim oluşturma kısmı (Sadeleştirildi)
     const islemYapanAd = ihbar?.profiles?.full_name || "Bilinmeyen Personel";
     const hedefRoller = yeniDurum === 'Durduruldu' ? ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici', 'Müdür', 'Admin'] : ['Çağrı Merkezi', 'Formen', 'Mühendis-Yönetici'];
     const mesajMetni = yeniDurum === 'Durduruldu' ? `⚠️ İŞ DURDURULDU: #${id} nolu iş (${ihbar?.konu}) ${islemYapanAd} tarafından durduruldu.` : `✅ İŞ TAMAMLANDI: #${id} nolu iş (${ihbar?.konu}) ${islemYapanAd} tarafından bitirildi.`;
@@ -183,16 +183,18 @@ export default function IhbarDetay() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-black">
           <div className="lg:col-span-2 space-y-6 font-black">
-            {/* BURASI KRİTİK: overflow-visible eklendi */}
             <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 md:p-10 rounded-[3rem] shadow-2xl border border-gray-800/50 overflow-visible relative font-black">
               <div className="mb-8 border-b border-gray-800 pb-6 font-black">
                 <p className="text-[9px] font-black text-orange-500 uppercase italic tracking-[0.2em] mb-2 font-black">OPERASYON DETAYI</p>
                 <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic leading-none mb-3 font-black">{ihbar.musteri_adi}</h1>
                 <p className="text-lg text-blue-400 font-bold uppercase italic tracking-tight font-black">{ihbar.konu}</p>
               </div>
-              <div className="bg-black/30 p-8 rounded-3xl border border-gray-800 mb-8 italic text-gray-300 leading-relaxed text-sm shadow-inner font-black font-black font-black font-black"> "{ihbar.aciklama || 'Açıklama belirtilmemiş.'}" </div>
+              
+              {/* DÜZELTİLEN AÇIKLAMA ALANI */}
+              <div className="bg-black/30 p-8 rounded-3xl border border-gray-800 mb-8 italic text-gray-300 leading-relaxed text-sm shadow-inner font-black"> 
+                "{ihbar.aciklama || 'Açıklama belirtilmemiş.'}" 
+              </div>
 
-              {/* ⚙️ TEKNİK NESNE ARAMA MODÜLÜ (TAMAMEN DÜZELTİLMİŞ) */}
               <div className="bg-[#111318] p-6 rounded-[2.5rem] border border-blue-500/30 mb-8 shadow-2xl relative overflow-visible z-[50] font-black">
                 <h3 className="text-blue-400 text-[10px] font-black uppercase italic mb-4 tracking-widest flex items-center gap-2 font-black font-black">
                   <span className="animate-pulse font-black font-black">●</span> TEKNİK NESNE / VARLIK SEÇİMİ
@@ -233,6 +235,7 @@ export default function IhbarDetay() {
                 )}
               </div>
 
+              {/* DÜZELTİLEN MALZEME TABLOSU */}
               <div className="mt-10 font-black">
                 <h3 className="font-black text-[10px] text-gray-500 uppercase mb-4 italic tracking-widest text-white font-black font-black">📦 MALZEME SARFİYATI</h3>
                 <div className="overflow-hidden rounded-3xl border border-gray-800 shadow-2xl font-black font-black">
@@ -241,14 +244,23 @@ export default function IhbarDetay() {
                       <tr><th className="p-4 font-black">KOD</th><th className="p-4 font-black">MALZEME</th><th className="p-4 text-right font-black">ADET</th></tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800 text-xs font-bold uppercase italic text-gray-200 bg-black/20 font-black font-black">
-                      {kullanilanlar.length === 0 ? ( <tr><td colSpan={3} className="p-10 text-center text-gray-600 tracking-tighter font-black font-black">Henüz sarfiyat girilmedi</td></tr> ) : ( kullanilanlar.map(k => ( <tr key={k.id} className="hover:bg-white/5 transition-colors font-black font-black"><td className="p-4 text-orange-400 font-black font-black">{k.malzeme_kodu}</td><td className="p-4 font-black font-black">{k.malzeme_adi}</td><td className="p-4 text-right text-blue-400 font-black font-black font-black">{k.kullanim_adedi}</td></tr> )) )}
+                      {kullanilanlar.length === 0 ? ( 
+                        <tr><td colSpan={3} className="p-10 text-center text-gray-600 tracking-tighter font-black font-black">Henüz sarfiyat girilmedi</td></tr> 
+                      ) : ( 
+                        kullanilanlar.map((k, index) => ( 
+                          <tr key={k.id || index} className="hover:bg-white/5 transition-colors font-black font-black">
+                            <td className="p-4 text-orange-400 font-black font-black">{k.malzeme_kodu}</td>
+                            <td className="p-4 font-black font-black">{k.malzeme_adi}</td>
+                            <td className="p-4 text-right text-blue-400 font-black font-black font-black">{k.kullanim_adedi}</td>
+                          </tr> 
+                        )) 
+                      )}
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
           </div>
-          
           <div className="space-y-6 font-black font-black">
             {ihbar.durum === 'Calisiliyor' ? (
               <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-2xl border border-orange-500/30 font-black font-black font-black">
