@@ -8,7 +8,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const [stats, setStats] = useState({ bekleyen: 0, islemde: 0, tamamlanan: 0 })
   const [ihbarlar, setIhbarlar] = useState<any[]>([])
-  const [aiKombinasyonlar, setAiKombinasyonlar] = useState<any[]>([]) // Kombinasyon tablosu için state
+  const [aiKombinasyonlar, setAiKombinasyonlar] = useState<any[]>([]) 
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
@@ -28,21 +28,15 @@ export default function DashboardPage() {
   const canManageGroups = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
   const canManageMaterials = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole);
 
-  // --- 🤖 YENİ NESİL AI ANALİZ MOTORU (GRUP/KOMBİNASYON MANTIĞI) ---
   const aiOneriGetir = (konu: string) => {
     if (!konu || aiKombinasyonlar.length === 0) return null;
     const metin = konu.toLowerCase();
 
     for (const kombo of aiKombinasyonlar) {
-      // Sadece admin onaylı kombinasyonları kontrol et
       if (!kombo.onay_durumu) continue;
-
-      // Kelime grubundaki elemanlardan metinde geçenleri say
       const eslesenler = kombo.kelime_grubu.filter((k: string) => 
         metin.includes(k.toLowerCase())
       );
-
-      // EĞER GRUPTAKİ KELİMELERDEN EN AZ 2 TANESİ VARSA ÖNERİYİ YAP
       if (eslesenler.length >= 2) {
         return kombo.onerilen_ekip;
       }
@@ -53,12 +47,12 @@ export default function DashboardPage() {
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
-    // AI Kombinasyonlarını çek (Yeni tablo: ai_kombinasyonlar)
     const { data: komboData } = await supabase.from('ai_kombinasyonlar').select('*');
     if (komboData) setAiKombinasyonlar(komboData);
 
+    // DÜZELTME: profiles tablosu eklendi
     const { data: ihbarData } = await supabase.from('ihbarlar')
-      .select(`*`)
+      .select(`*, profiles:atanan_personel(full_name)`)
       .order('created_at', { ascending: false })
     
     if (ihbarData) {
@@ -95,7 +89,7 @@ export default function DashboardPage() {
       .from('bildirimler')
       .select('*', { count: 'exact' })
       .eq('is_read', false)
-      .contains('hedef_roller', [role.trim()])
+      .contains('heget_roller', [role.trim()])
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -138,8 +132,6 @@ export default function DashboardPage() {
   const JobCard = ({ ihbar }: { ihbar: any }) => {
     const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
     const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && ihbar.durum === 'Beklemede';
-    
-    // AI Önerisini al
     const oneri = aiOneriGetir(`${ihbar.konu} ${ihbar.aciklama || ''}`);
 
     return (
@@ -154,7 +146,6 @@ export default function DashboardPage() {
           <span className="text-[9px] text-gray-500 font-bold font-black">{new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</span>
         </div>
 
-        {/* 🤖 AI ÖNERİ ROZETİ */}
         {oneri && (
           <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded bg-blue-600/10 border border-blue-500/20 w-fit">
             <span className="relative flex h-1.5 w-1.5">
@@ -168,7 +159,10 @@ export default function DashboardPage() {
         <div className="font-black text-[12px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.musteri_adi}</div>
         <div className="text-[10px] font-bold uppercase mb-3 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
         <div className="flex justify-between items-center text-[9px] font-black opacity-60 text-gray-300 font-black">
-           <span>👤 {isVardiya ? 'VARDİYA HAVUZU' : 'PERSONEL'}</span>
+           {/* DÜZELTME: Personel ismi ve HAVUZ kontrolü */}
+           <span className={`uppercase ${ihbar.profiles?.full_name ? 'text-orange-500' : 'text-blue-400 animate-pulse'}`}>
+             👤 {isVardiya ? 'VARDİYA HAVUZU' : (ihbar.profiles?.full_name || 'HAVUZ (ATANMADI)')}
+           </span>
            <span className="flex items-center gap-1 font-black">⏱️ {Math.floor(diff)} DK</span>
         </div>
       </div>
@@ -227,15 +221,14 @@ export default function DashboardPage() {
             {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">👥 Çalışma Grupları</div>}
             {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600/10 text-red-500 border border-red-900/30 rounded-xl cursor-pointer animate-pulse text-center mt-4 text-[10px] font-black font-black">📺 İzleme Ekranı</div>}
             {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">📊 Raporlama</div>}
-            {/* ⚙️ TEKNİK NESNE YÖNETİMİ (YETKİLİ PERSONEL GÖRÜR) */}
-{isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole) ? (
-  <div 
-    onClick={() => router.push('/dashboard/teknik-nesne-yonetimi')} 
-    className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-blue-400 border border-blue-500/10 font-black flex items-center gap-2 uppercase italic text-[10px]"
-  >
-    <span className="text-sm">⚙️</span> TEKNİK NESNE YÖNETİMİ
-  </div>
-) : null}
+            {isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole) ? (
+              <div 
+                onClick={() => router.push('/dashboard/teknik-nesne-yonetimi')} 
+                className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-blue-400 border border-blue-500/10 font-black flex items-center gap-2 uppercase italic text-[10px]"
+              >
+                <span className="text-sm">⚙️</span> TEKNİK NESNE YÖNETİMİ
+              </div>
+            ) : null}
             {isAdmin && (
               <div 
                 onClick={() => router.push('/dashboard/ai-yonetim')} 
