@@ -103,11 +103,21 @@ export default function AIYonetimPage() {
             </div>
           </div>
 
+          {/* TOPLU VERİ YÜKLEME ALANI (AÇIKLAMA EKLENDİ) */}
           <div className="lg:col-span-5 bg-[#1a1c23] border border-blue-500/20 p-6 rounded-[2rem] shadow-2xl flex flex-col justify-center items-center text-center">
-             <h3 className="text-blue-400 text-[9px] mb-3 tracking-widest uppercase">📊 TOPLU VERİ YÜKLEME</h3>
-             <label className="w-full cursor-pointer bg-blue-600/5 border-2 border-dashed border-blue-500/20 p-6 rounded-2xl hover:bg-blue-600/10 transition-all">
-               <span className="text-2xl block mb-1">📁</span>
-               <span className="text-[9px] text-blue-400 uppercase font-black">DOSYA SÜRÜKLE</span>
+             <h3 className="text-blue-400 text-[9px] mb-2 tracking-widest uppercase">📊 TOPLU VERİ YÜKLEME</h3>
+             
+             <div className="mb-3 bg-blue-600/5 p-3 rounded-xl border border-blue-500/10 w-full">
+                <p className="text-[8px] text-blue-300/80 leading-relaxed font-black uppercase">
+                    FORMAT: <span className="text-white">"kelime"</span> VE <span className="text-white">"onerilen_ekip"</span> SÜTUNLARI.
+                    <br />
+                    KELİMELER ARASINA <span className="text-orange-500 text-[10px]"> ( , ) </span> EKLEYEBİLİRSİNİZ.
+                </p>
+             </div>
+
+             <label className="w-full cursor-pointer bg-blue-600/5 border-2 border-dashed border-blue-500/20 p-5 rounded-2xl hover:bg-blue-600/10 transition-all group">
+               <span className="text-2xl block mb-1 group-hover:scale-110 transition-transform">📁</span>
+               <span className="text-[9px] text-blue-400 uppercase font-black">DOSYA SÜRÜKLE VEYA SEÇ</span>
                <input type="file" accept=".xlsx, .xls" className="hidden" />
              </label>
           </div>
@@ -136,11 +146,9 @@ export default function AIYonetimPage() {
                     ))}
                   </div>
                   <div className="flex justify-between items-center border-t border-gray-800/50 pt-2 mt-2">
-                    {/* EKİP ADI BÜYÜTÜLDÜ */}
                     <span className="text-[9px] text-gray-400 font-black truncate max-w-[75px] uppercase tracking-tighter">
                       {item.onerilen_ekip}
                     </span>
-                    {/* SİL BUTONU BÜYÜTÜLDÜ */}
                     <button onClick={() => sil(item.id, true)} className="text-[9px] text-red-500 hover:text-red-400 transition-colors font-black tracking-widest">
                       SİL
                     </button>
@@ -168,12 +176,10 @@ export default function AIYonetimPage() {
                     ))}
                   </div>
                   <div className="flex justify-between items-center border-t border-gray-800/50 pt-2">
-                    {/* HEDEF EKİP BÜYÜTÜLDÜ */}
                     <span className="text-[9px] text-blue-400/80 font-black truncate max-w-[90px] uppercase tracking-tighter">
                       {item.onerilen_ekip}
                     </span>
-                    {/* KALDIR/SİL BUTONU BÜYÜTÜLDÜ */}
-                    <button onClick={() => sil(item.id, false)} className="text-[9px] text-red-500 font-black tracking-widest hover:text-red-400">
+                    <button onClick={() => sil(item.id, false)} className="text-[9px] text-red-500 font-black tracking-widest hover:text-red-400 transition-colors">
                       SİL
                     </button>
                   </div>
