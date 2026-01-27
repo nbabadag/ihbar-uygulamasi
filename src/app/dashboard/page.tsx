@@ -18,15 +18,18 @@ export default function DashboardPage() {
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [isBildirimAcik, setIsBildirimAcik] = useState(false)
 
+  // --- YETKİ KONTROLLERİ DÜZENLENDİ ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
   const isAdmin = normalizedRole === 'ADMIN';
 
-  const canCreateJob = isAdmin || ['CAGRI MERKEZI', 'ÇAĞRI MERKEZI', 'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canManageUsers = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canSeeReports = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canSeeTV = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ÇAĞRI MERKEZI'].includes(normalizedRole);
-  const canManageGroups = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canManageMaterials = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole);
+  // Senin verdiğin listeye göre normalize edilmiş yetkiler
+  const canCreateJob = isAdmin || ['CAGRI MERKEZI', 'ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole);
+  const canManageUsers = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole);
+  const canSeeReports = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole);
+  const canSeeTV = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ÇAĞRI MERKEZI', 'ÇAĞRI MERKEZİ', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole);
+  const canManageGroups = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole);
+  const canManageMaterials = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole);
+  // --- YETKİ KONTROLLERİ SONU ---
 
   const aiOneriGetir = (konu: string) => {
     if (!konu || aiKombinasyonlar.length === 0) return null;
@@ -50,7 +53,6 @@ export default function DashboardPage() {
     const { data: komboData } = await supabase.from('ai_kombinasyonlar').select('*');
     if (komboData) setAiKombinasyonlar(komboData);
 
-    // DÜZELTME: profiles tablosu eklendi
     const { data: ihbarData } = await supabase.from('ihbarlar')
       .select(`*, profiles:atanan_personel(full_name)`)
       .order('created_at', { ascending: false })
@@ -159,7 +161,6 @@ export default function DashboardPage() {
         <div className="font-black text-[12px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.musteri_adi}</div>
         <div className="text-[10px] font-bold uppercase mb-3 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
         <div className="flex justify-between items-center text-[9px] font-black opacity-60 text-gray-300 font-black">
-           {/* DÜZELTME: Personel ismi ve HAVUZ kontrolü */}
            <span className={`uppercase ${ihbar.profiles?.full_name ? 'text-orange-500' : 'text-blue-400 animate-pulse'}`}>
              👤 {isVardiya ? 'VARDİYA HAVUZU' : (ihbar.profiles?.full_name || 'HAVUZ (ATANMADI)')}
            </span>
@@ -221,15 +222,15 @@ export default function DashboardPage() {
             {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">👥 Çalışma Grupları</div>}
             {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600/10 text-red-500 border border-red-900/30 rounded-xl cursor-pointer animate-pulse text-center mt-4 text-[10px] font-black font-black">📺 İzleme Ekranı</div>}
             {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">📊 Raporlama</div>}
-            {isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole) ? (
+            {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole)) && (
               <div 
                 onClick={() => router.push('/dashboard/teknik-nesne-yonetimi')} 
                 className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-blue-400 border border-blue-500/10 font-black flex items-center gap-2 uppercase italic text-[10px]"
               >
                 <span className="text-sm">⚙️</span> TEKNİK NESNE YÖNETİMİ
               </div>
-            ) : null}
-            {isAdmin && (
+            )}
+            {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'MUHENDIS', 'MÜHENDİS'].includes(normalizedRole)) && (
               <div 
                 onClick={() => router.push('/dashboard/ai-yonetim')} 
                 className="p-3 bg-blue-600/10 text-blue-400 border border-blue-900/30 rounded-xl cursor-pointer hover:bg-blue-600/20 transition-all mt-2 text-[10px] font-black font-black uppercase italic"
