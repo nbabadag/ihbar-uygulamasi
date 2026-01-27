@@ -18,16 +18,21 @@ export default function DashboardPage() {
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [isBildirimAcik, setIsBildirimAcik] = useState(false)
 
-  // --- YETKİ KONTROLLERİ (ORİJİNAL İSİMLERLE GÜNCELLEDİM) ---
+  // --- HATA PAYI SIFIR YETKİ KONTROLÜ ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
-  const isAdmin = normalizedRole === 'ADMIN';
+  const isAdmin = normalizedRole.includes('ADMIN');
+  const isMudur = normalizedRole.includes('MÜDÜR') || normalizedRole.includes('MUDUR');
+  const isMuhendis = normalizedRole.includes('MÜH') || normalizedRole.includes('MUH');
+  const isCagri = normalizedRole.includes('ÇAĞRI') || normalizedRole.includes('CAGRI');
+  const isFormen = normalizedRole.includes('FORMEN');
 
-  const canCreateJob = isAdmin || ['CAGRI MERKEZI', 'ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canManageUsers = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canSeeReports = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canSeeTV = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ÇAĞRI MERKEZİ', 'CAGRI MERKEZI'].includes(normalizedRole);
-  const canManageGroups = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
-  const canManageMaterials = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole);
+  // Yetki Grupları (Görseldeki hiyerarşiye göre)
+  const canManageUsers = isAdmin || isMudur || isMuhendis;
+  const canCreateJob = canManageUsers || isFormen || isCagri;
+  const canSeeReports = canManageUsers || isFormen;
+  const canSeeTV = canCreateJob;
+  const canManageGroups = canManageUsers || isFormen;
+  const canManageMaterials = canManageUsers || isFormen;
   // --- YETKİ KONTROLLERİ SONU ---
 
   const aiOneriGetir = (konu: string) => {
@@ -221,7 +226,7 @@ export default function DashboardPage() {
             {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">👥 Çalışma Grupları</div>}
             {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600/10 text-red-500 border border-red-900/30 rounded-xl cursor-pointer animate-pulse text-center mt-4 text-[10px] font-black font-black">📺 İzleme Ekranı</div>}
             {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">📊 Raporlama</div>}
-            {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole)) && (
+            {canManageUsers && (
               <div 
                 onClick={() => router.push('/dashboard/teknik-nesne-yonetimi')} 
                 className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-blue-400 border border-blue-500/10 font-black flex items-center gap-2 uppercase italic text-[10px]"
@@ -229,21 +234,12 @@ export default function DashboardPage() {
                 <span className="text-sm">⚙️</span> TEKNİK NESNE YÖNETİMİ
               </div>
             )}
-            {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole)) && (
+            {canManageUsers && (
               <div 
                 onClick={() => router.push('/dashboard/ai-yonetim')} 
                 className="p-3 bg-blue-600/10 text-blue-400 border border-blue-900/30 rounded-xl cursor-pointer hover:bg-blue-600/20 transition-all mt-2 text-[10px] font-black font-black uppercase italic"
               >
                 🤖 AI ÖĞRENME MERKEZİ
-              </div>
-            )}
-             {/* 10.000+ VERİ YÜKLEME SİHİRBAZI BUTONU */}
-             {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole)) && (
-              <div 
-                onClick={() => router.push('/dashboard/ai-yukleme')} 
-                className="p-3 bg-orange-600/10 text-orange-500 border border-orange-900/30 rounded-xl cursor-pointer hover:bg-orange-600/20 transition-all mt-4 text-[10px] font-black font-black uppercase italic animate-pulse"
-              >
-                🚀 TOPLU VERİ YÜKLEME
               </div>
             )}
           </nav>
@@ -258,29 +254,43 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex-1 p-4 md:p-8 ml-0 md:ml-64 font-bold flex flex-col gap-6 relative z-10 font-black">
-        <div className="md:hidden flex justify-between items-center bg-[#111318] p-4 rounded-2xl text-white shadow-xl border border-gray-800 font-black">
-          <img src="/logo.png" className="w-10 h-auto font-black" />
-          <button onClick={() => setIsBildirimAcik(true)} className="relative p-2 font-black"><span className="text-xl font-black">🔔</span>
-            {bildirimSayisi > 0 && <span className="absolute top-0 right-0 bg-orange-600 text-[8px] w-4 h-4 flex items-center justify-center rounded-full font-black font-black">{bildirimSayisi}</span>}
-          </button>
+        <div className="flex justify-between items-center bg-[#111318] p-4 rounded-2xl text-white shadow-xl border border-gray-800 font-black">
+          <div className="flex items-center gap-4">
+             <img src="/logo.png" className="w-10 h-auto hidden md:block" />
+             <div className="font-black uppercase italic text-xs tracking-tighter">DENETİM MERKEZİ</div>
+          </div>
+          <div className="flex gap-2">
+            {/* TOPLU YÜKLEME BUTONU BURAYA GELDİ */}
+            {canManageUsers && (
+              <button 
+                onClick={() => router.push('/dashboard/ai-yukleme')}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-black text-[9px] uppercase italic transition-all shadow-lg animate-pulse"
+              >
+                🚀 TOPLU VERİ YÜKLEME
+              </button>
+            )}
+            <button onClick={() => setIsBildirimAcik(true)} className="relative p-2 font-black md:hidden"><span className="text-xl font-black">🔔</span>
+              {bildirimSayisi > 0 && <span className="absolute top-0 right-0 bg-orange-600 text-[8px] w-4 h-4 flex items-center justify-center rounded-full font-black">{bildirimSayisi}</span>}
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-black mt-2">
           <div className="flex flex-col bg-yellow-500/5 backdrop-blur-md p-5 rounded-[2.5rem] border border-yellow-500/10 h-[680px] overflow-hidden shadow-inner font-black">
             <h3 className="text-[11px] font-black uppercase italic mb-4 text-yellow-500 flex items-center gap-2 tracking-widest font-black">
-              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse font-black font-black"></span> Havuz ({stats.bekleyen})
+              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse font-black"></span> Havuz ({stats.bekleyen})
             </h3>
             <div className="overflow-y-auto flex-1 custom-scrollbar font-black">{ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('beklemede')).map(i => <JobCard key={i.id} ihbar={i} />)}</div>
           </div>
           <div className="flex flex-col bg-blue-500/5 backdrop-blur-md p-5 rounded-[2.5rem] border border-blue-500/10 h-[680px] overflow-hidden shadow-inner font-black">
-            <h3 className="text-[11px] font-black uppercase italic mb-4 text-blue-400 flex items-center gap-2 tracking-widest font-black font-black">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse font-black font-black"></span> İşlemde ({stats.islemde})
+            <h3 className="text-[11px] font-black uppercase italic mb-4 text-blue-400 flex items-center gap-2 tracking-widest font-black">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse font-black"></span> İşlemde ({stats.islemde})
             </h3>
             <div className="overflow-y-auto flex-1 custom-scrollbar font-black">{ihbarlar.filter(i => !(i.durum || '').toLowerCase().includes('beklemede') && !(i.durum || '').toLowerCase().includes('tamamlandi')).map(i => <JobCard key={i.id} ihbar={i} />)}</div>
           </div>
           <div className="flex flex-col bg-green-500/5 backdrop-blur-md p-5 rounded-[2.5rem] border border-green-500/10 h-[680px] overflow-hidden shadow-inner font-black">
-            <h3 className="text-[11px] font-black uppercase italic mb-4 text-green-400 flex items-center gap-2 tracking-widest font-black font-black">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse font-black font-black"></span> Biten ({stats.tamamlanan})
+            <h3 className="text-[11px] font-black uppercase italic mb-4 text-green-400 flex items-center gap-2 tracking-widest font-black">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse font-black"></span> Biten ({stats.tamamlanan})
             </h3>
             <div className="overflow-y-auto flex-1 custom-scrollbar font-black">{ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).map(i => <JobCard key={i.id} ihbar={i} />)}</div>
           </div>
