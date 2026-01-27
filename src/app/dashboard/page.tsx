@@ -18,22 +18,16 @@ export default function DashboardPage() {
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [isBildirimAcik, setIsBildirimAcik] = useState(false)
 
-  // --- YETKİ KONTROLLERİ (SQL GÖRSELİNE %100 UYUMLU) ---
+  // --- YETKİ KONTROLLERİ (ORİJİNAL İSİMLERLE GÜNCELLEDİM) ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
   const isAdmin = normalizedRole === 'ADMIN';
-  const isMudur = normalizedRole === 'MÜDÜR' || normalizedRole === 'MUDUR';
-  const isMuhendisYonetici = normalizedRole === 'MÜHENDİS-YÖNETİCİ' || normalizedRole === 'MUHENDIS-YONETICI' || normalizedRole === 'MUHENDIS';
-  const isFormen = normalizedRole === 'FORMEN';
-  const isCagriMerkezi = normalizedRole === 'ÇAĞRI MERKEZİ' || normalizedRole === 'CAGRI MERKEZI';
 
-  // Yetki Grupları
-  const isTopManagement = isAdmin || isMudur || isMuhendisYonetici;
-  const canCreateJob = isTopManagement || isFormen || isCagriMerkezi;
-  const canManageUsers = isTopManagement;
-  const canSeeReports = isTopManagement || isFormen;
-  const canSeeTV = isTopManagement || isFormen || isCagriMerkezi;
-  const canManageGroups = isTopManagement || isFormen;
-  const canManageMaterials = isTopManagement || isFormen;
+  const canCreateJob = isAdmin || ['CAGRI MERKEZI', 'ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canManageUsers = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canSeeReports = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canSeeTV = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ÇAĞRI MERKEZİ', 'CAGRI MERKEZI'].includes(normalizedRole);
+  const canManageGroups = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canManageMaterials = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole);
   // --- YETKİ KONTROLLERİ SONU ---
 
   const aiOneriGetir = (konu: string) => {
@@ -227,7 +221,7 @@ export default function DashboardPage() {
             {canManageGroups && <div onClick={() => router.push('/dashboard/calisma-gruplari')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">👥 Çalışma Grupları</div>}
             {canSeeTV && <div onClick={() => router.push('/dashboard/izleme-ekrani')} className="p-3 bg-red-600/10 text-red-500 border border-red-900/30 rounded-xl cursor-pointer animate-pulse text-center mt-4 text-[10px] font-black font-black">📺 İzleme Ekranı</div>}
             {canSeeReports && <div onClick={() => router.push('/dashboard/raporlar')} className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-white font-black font-black">📊 Raporlama</div>}
-            {isTopManagement && (
+            {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole)) && (
               <div 
                 onClick={() => router.push('/dashboard/teknik-nesne-yonetimi')} 
                 className="p-3 hover:bg-gray-800/50 rounded-xl cursor-pointer transition-all opacity-80 hover:opacity-100 text-blue-400 border border-blue-500/10 font-black flex items-center gap-2 uppercase italic text-[10px]"
@@ -235,7 +229,7 @@ export default function DashboardPage() {
                 <span className="text-sm">⚙️</span> TEKNİK NESNE YÖNETİMİ
               </div>
             )}
-            {isTopManagement && (
+            {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole)) && (
               <div 
                 onClick={() => router.push('/dashboard/ai-yonetim')} 
                 className="p-3 bg-blue-600/10 text-blue-400 border border-blue-900/30 rounded-xl cursor-pointer hover:bg-blue-600/20 transition-all mt-2 text-[10px] font-black font-black uppercase italic"
@@ -243,8 +237,8 @@ export default function DashboardPage() {
                 🤖 AI ÖĞRENME MERKEZİ
               </div>
             )}
-            {/* 10.000+ VERİ YÜKLEME SİHİRBAZI BUTONU */}
-            {isTopManagement && (
+             {/* 10.000+ VERİ YÜKLEME SİHİRBAZI BUTONU */}
+             {(isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole)) && (
               <div 
                 onClick={() => router.push('/dashboard/ai-yukleme')} 
                 className="p-3 bg-orange-600/10 text-orange-500 border border-orange-900/30 rounded-xl cursor-pointer hover:bg-orange-600/20 transition-all mt-4 text-[10px] font-black font-black uppercase italic animate-pulse"
