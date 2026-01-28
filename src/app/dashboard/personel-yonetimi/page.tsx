@@ -21,10 +21,22 @@ export default function KullaniciDenetimMerkezi() {
   const [phone, setPhone] = useState('')
   const [role, setRole] = useState('Saha Personeli')
 
+  // --- YETKİ DÜZENLEMESİ BAŞLANGICI ---
   const normalizedRole = currentUserRole?.trim().toUpperCase() || '';
-  const canManage = ['ADMIN', 'MÜDÜR', 'MÜHENDİS-YÖNETİCİ'].includes(normalizedRole);
-  const canDelete = ['ADMIN', 'MÜDÜR'].includes(normalizedRole);
-  const canChangePassword = ['ADMIN', 'MÜHENDİS-YÖNETİCİ'].includes(normalizedRole);
+  const isAdmin = normalizedRole === 'ADMIN';
+
+  // Senin verdiğin listeye göre güncellenen yetkiler:
+  const canManage = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canDelete = isAdmin || ['MÜDÜR'].includes(normalizedRole);
+  const canChangePassword = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+
+  // Diğer sayfalar ve işlemler için genel yetki tanımları
+  const canCreateJob = isAdmin || ['CAGRI MERKEZI', 'ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canSeeReports = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canSeeTV = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'ÇAĞRI MERKEZI', 'ÇAĞRI MERKEZİ'].includes(normalizedRole);
+  const canManageGroups = isAdmin || ['FORMEN', 'MÜHENDİS-YÖNETİCİ', 'MÜDÜR'].includes(normalizedRole);
+  const canManageMaterials = isAdmin || ['MÜHENDİS-YÖNETİCİ', 'MÜDÜR', 'FORMEN'].includes(normalizedRole);
+  // --- YETKİ DÜZENLEMESİ SONU ---
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -42,21 +54,18 @@ export default function KullaniciDenetimMerkezi() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // --- 🛠️ ŞİFRE GÜNCELLEME BURADA DÜZELTİLDİ ---
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canManage) return alert("Yetkiniz yok.")
     setLoading(true)
 
     try {
-      // 1. Profil Bilgilerini Güncelle (Profiles Tablosu)
       const { error: profileError } = await supabase.from('profiles').update({ 
         full_name: editingUser.full_name, phone_number: editingUser.phone_number, role: editingUser.role 
       }).eq('id', editingUser.id)
 
       if (profileError) throw profileError
 
-      // 2. Şifre Değiştirme (API Route Üzerinden)
       if (newPassword && canChangePassword) {
         const response = await fetch('/api/admin/update-password', {
           method: 'POST',
@@ -124,18 +133,18 @@ export default function KullaniciDenetimMerkezi() {
             <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none drop-shadow-[0_0_10px_rgba(249,115,22,0.3)]">Denetim Merkezi</h1>
             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-1 italic">Sefine Shipyard // Personel Kontrol</p>
           </div>
-          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/30 font-black font-black"><span className="text-sm">←</span> GERİ DÖN</button>
+          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/30 font-black"><span className="text-sm">←</span> GERİ DÖN</button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] border border-gray-800/50 shadow-2xl font-black">
               <h2 className="font-black mb-4 text-orange-500 uppercase text-[9px] italic tracking-widest border-b border-gray-800 pb-2 font-black">Personel Tanımla</h2>
-              <form onSubmit={handleCreateUser} className="space-y-3 font-black font-black">
-                <input type="text" placeholder="AD SOYAD" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 transition-all font-black font-black" required />
-                <input type="email" placeholder="E-POSTA" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 transition-all font-black font-black" required />
-                <input type="password" placeholder="ŞİFRE" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 transition-all font-black font-black" required />
-                <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black italic text-[10px] uppercase text-orange-400 outline-none font-black font-black">
+              <form onSubmit={handleCreateUser} className="space-y-3 font-black">
+                <input type="text" placeholder="AD SOYAD" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 transition-all font-black" required />
+                <input type="email" placeholder="E-POSTA" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 transition-all font-black" required />
+                <input type="password" placeholder="ŞİFRE" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 transition-all font-black" required />
+                <select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3.5 bg-black/40 border border-gray-700 rounded-2xl font-black italic text-[10px] uppercase text-orange-400 outline-none font-black">
                   <option value="Saha Personeli">Saha Personeli</option>
                   <option value="Formen">Formen</option>
                   <option value="Çağrı Merkezi">Çağrı Merkezi</option>
@@ -143,20 +152,20 @@ export default function KullaniciDenetimMerkezi() {
                   <option value="Müdür">Müdür</option>
                   <option value="Admin">Admin</option>
                 </select>
-                <button disabled={loading || !canManage} className="w-full bg-orange-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] shadow-xl hover:bg-orange-700 transition-all italic tracking-widest disabled:opacity-30 font-black font-black">{loading ? 'İŞLEM YAPILIYOR...' : 'SİSTEME KAYDET'}</button>
+                <button disabled={loading || !canManage} className="w-full bg-orange-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] shadow-xl hover:bg-orange-700 transition-all italic tracking-widest disabled:opacity-30 font-black">{loading ? 'İŞLEM YAPILIYOR...' : 'SİSTEME KAYDET'}</button>
               </form>
             </div>
 
             <div className="bg-[#111318]/90 backdrop-blur-lg p-6 rounded-[2.5rem] border border-blue-500/20 shadow-2xl font-black">
-              <h2 className="font-black mb-4 text-blue-400 uppercase text-[9px] italic tracking-widest border-b border-gray-800 pb-2 font-black font-black">Ekip Yönetimi</h2>
-              <button onClick={() => router.push('/dashboard/calisma-gruplari')} className="w-full p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-[10px] font-black uppercase italic transition-all flex items-center justify-between shadow-lg font-black font-black"><span>👥 GRUP DÜZENLE</span><span>→</span></button>
+              <h2 className="font-black mb-4 text-blue-400 uppercase text-[9px] italic tracking-widest border-b border-gray-800 pb-2 font-black">Ekip Yönetimi</h2>
+              <button onClick={() => router.push('/dashboard/calisma-gruplari')} className="w-full p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-[10px] font-black uppercase italic transition-all flex items-center justify-between shadow-lg font-black"><span>👥 GRUP DÜZENLE</span><span>→</span></button>
             </div>
 
             <div className="bg-black/40 p-6 rounded-[2.5rem] border border-gray-800 shadow-2xl font-black">
-              <h2 className="font-black mb-4 text-gray-500 uppercase text-[9px] italic tracking-widest border-b border-gray-800 pb-2 font-black font-black">🛰️ Takip Modu</h2>
-              <div className="space-y-3 font-black font-black">
-                <button onClick={() => handleKonumModuGuncelle('muhurleme')} className={`w-full p-3.5 rounded-xl text-[9px] font-black uppercase transition-all font-black font-black ${konumModu === 'muhurleme' ? 'bg-white text-black' : 'bg-gray-800 text-gray-500 opacity-40 font-black font-black'}`}>📍 MÜHÜRLEME</button>
-                <button onClick={() => handleKonumModuGuncelle('canli_takip')} className={`w-full p-3.5 rounded-xl text-[9px] font-black uppercase transition-all font-black font-black ${konumModu === 'canli_takip' ? 'bg-orange-600 text-white' : 'bg-gray-800 text-gray-500 opacity-40 font-black font-black'}`}>📡 CANLI TAKİP</button>
+              <h2 className="font-black mb-4 text-gray-500 uppercase text-[9px] italic tracking-widest border-b border-gray-800 pb-2 font-black">🛰️ Takip Modu</h2>
+              <div className="space-y-3 font-black">
+                <button onClick={() => handleKonumModuGuncelle('muhurleme')} className={`w-full p-3.5 rounded-xl text-[9px] font-black uppercase transition-all font-black ${konumModu === 'muhurleme' ? 'bg-white text-black' : 'bg-gray-800 text-gray-500 opacity-40 font-black'}`}>📍 MÜHÜRLEME</button>
+                <button onClick={() => handleKonumModuGuncelle('canli_takip')} className={`w-full p-3.5 rounded-xl text-[9px] font-black uppercase transition-all font-black ${konumModu === 'canli_takip' ? 'bg-orange-600 text-white' : 'bg-gray-800 text-gray-500 opacity-40 font-black'}`}>📡 CANLI TAKİP</button>
               </div>
             </div>
           </div>
@@ -172,16 +181,16 @@ export default function KullaniciDenetimMerkezi() {
                     <th className="p-6 text-right">EYLEMLER</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-800/50 font-black font-black">
+                <tbody className="divide-y divide-gray-800/50 font-black">
                   {users.map((u) => (
                     <tr key={u.id} className={`${!u.is_active ? 'opacity-30 grayscale' : 'hover:bg-white/5'} transition-all`}>
                       <td className="p-6"><div className="font-black text-sm text-white uppercase italic tracking-tighter">{u.full_name}</div><div className="text-[10px] text-orange-500 font-black uppercase tracking-widest">{u.role}</div></td>
-                      <td className="p-6"><div className="text-xs font-bold text-gray-300 font-black font-black">{u.email}</div><div className="text-[9px] font-black text-blue-400 mt-1 uppercase">{u.phone_number || 'TEL GİRİLMEMİŞ'}</div></td>
-                      <td className="p-6"><span className={`text-[8px] font-black px-3 py-1 rounded-lg border ${u.is_active ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20 font-black font-black'}`}>{u.is_active ? 'SİSTEMDE' : 'KAPALI'}</span></td>
-                      <td className="p-6 text-right space-x-2 font-black font-black">
+                      <td className="p-6"><div className="text-xs font-bold text-gray-300 font-black">{u.email}</div><div className="text-[9px] font-black text-blue-400 mt-1 uppercase">{u.phone_number || 'TEL GİRİLMEMİŞ'}</div></td>
+                      <td className="p-6"><span className={`text-[8px] font-black px-3 py-1 rounded-lg border ${u.is_active ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20 font-black'}`}>{u.is_active ? 'SİSTEMDE' : 'KAPALI'}</span></td>
+                      <td className="p-6 text-right space-x-2 font-black">
                         <button onClick={() => setEditingUser(u)} className="text-[9px] font-black uppercase text-white bg-gray-800 px-3 py-2 rounded-xl hover:bg-orange-600 transition-all border border-gray-700">⚙️</button>
-                        <button onClick={() => toggleStatus(u.id, u.is_active)} className="text-[9px] font-black uppercase text-white bg-gray-800 px-3 py-2 rounded-xl hover:bg-blue-600 transition-all border border-gray-700 font-black font-black">Güç</button>
-                        {canDelete && <button onClick={() => handleDelete(u.id, u.full_name)} className="text-[9px] font-black uppercase text-white bg-red-900/20 px-3 py-2 rounded-xl hover:bg-red-600 transition-all border border-red-900/30 font-black font-black">Sil</button>}
+                        <button onClick={() => toggleStatus(u.id, u.is_active)} className="text-[9px] font-black uppercase text-white bg-gray-800 px-3 py-2 rounded-xl hover:bg-blue-600 transition-all border border-gray-700 font-black">Güç</button>
+                        {canDelete && <button onClick={() => handleDelete(u.id, u.full_name)} className="text-[9px] font-black uppercase text-white bg-red-900/20 px-3 py-2 rounded-xl hover:bg-red-600 transition-all border border-red-900/30 font-black">Sil</button>}
                       </td>
                     </tr>
                   ))}
@@ -194,17 +203,17 @@ export default function KullaniciDenetimMerkezi() {
 
       {editingUser && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[100] font-black">
-          <div className="bg-[#1a1c23] rounded-[3rem] p-10 max-w-md w-full border border-gray-800 shadow-2xl relative overflow-hidden font-black font-black">
-            <div className="absolute top-0 left-0 w-full h-2 bg-orange-600 font-black font-black"></div>
-            <h2 className="text-2xl font-black mb-8 uppercase italic text-white flex items-center gap-3"> <span className="text-orange-500 font-black font-black">⚙️</span> Profil Düzenle </h2>
-            <form onSubmit={handleUpdateUser} className="space-y-5 font-black font-black">
-              <div className="space-y-1 font-black font-black">
+          <div className="bg-[#1a1c23] rounded-[3rem] p-10 max-w-md w-full border border-gray-800 shadow-2xl relative overflow-hidden font-black">
+            <div className="absolute top-0 left-0 w-full h-2 bg-orange-600 font-black"></div>
+            <h2 className="text-2xl font-black mb-8 uppercase italic text-white flex items-center gap-3"> <span className="text-orange-500 font-black">⚙️</span> Profil Düzenle </h2>
+            <form onSubmit={handleUpdateUser} className="space-y-5 font-black">
+              <div className="space-y-1 font-black">
                 <label className="text-[9px] font-black uppercase text-gray-500 ml-4 italic">Personel İsmi</label>
-                <input type="text" value={editingUser.full_name} onChange={e => setEditingUser({...editingUser, full_name: e.target.value})} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 font-black font-black" />
+                <input type="text" value={editingUser.full_name} onChange={e => setEditingUser({...editingUser, full_name: e.target.value})} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 font-black" />
               </div>
-              <div className="space-y-1 font-black font-black">
+              <div className="space-y-1 font-black">
                 <label className="text-[9px] font-black uppercase text-gray-500 ml-4 italic">Yetki Seviyesi</label>
-                <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs uppercase text-orange-500 outline-none font-black font-black">
+                <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-xs uppercase text-orange-500 outline-none font-black">
                   <option value="Saha Personeli">Saha Personeli</option>
                   <option value="Formen">Formen</option>
                   <option value="Çağrı Merkezi">Çağrı Merkezi</option>
@@ -215,22 +224,22 @@ export default function KullaniciDenetimMerkezi() {
               </div>
               
               {canChangePassword && (
-                <div className="space-y-1 pt-4 border-t border-gray-800 font-black font-black">
+                <div className="space-y-1 pt-4 border-t border-gray-800 font-black">
                   <label className="text-[9px] font-black uppercase text-orange-500 ml-4 italic">🔒 Yeni Şifre Tanımla</label>
                   <input 
                     type="password" 
                     placeholder="ŞİFREYİ BURADAN DEĞİŞTİRİN" 
                     value={newPassword} 
                     onChange={e => setNewPassword(e.target.value)} 
-                    className="w-full p-4 bg-orange-600/5 border border-orange-500/20 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 font-black font-black" 
+                    className="w-full p-4 bg-orange-600/5 border border-orange-500/20 rounded-2xl font-black text-xs text-white outline-none focus:border-orange-500 font-black" 
                   />
-                  <p className="text-[7px] text-gray-500 ml-4 mt-1 italic font-black font-black">* Boş bırakırsanız mevcut şifre korunur.</p>
+                  <p className="text-[7px] text-gray-500 ml-4 mt-1 italic font-black">* Boş bırakırsanız mevcut şifre korunur.</p>
                 </div>
               )}
 
-              <div className="flex gap-3 pt-8 font-black font-black">
-                <button type="button" onClick={() => { setEditingUser(null); setNewPassword(''); }} className="flex-1 bg-gray-800 p-4 rounded-2xl font-black uppercase text-[10px] italic text-gray-400 font-black font-black">İptal</button>
-                <button type="submit" disabled={loading} className="flex-1 bg-orange-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] italic shadow-xl shadow-orange-900/30 font-black font-black">GÜNCELLE</button>
+              <div className="flex gap-3 pt-8 font-black">
+                <button type="button" onClick={() => { setEditingUser(null); setNewPassword(''); }} className="flex-1 bg-gray-800 p-4 rounded-2xl font-black uppercase text-[10px] italic text-gray-400 font-black">İptal</button>
+                <button type="submit" disabled={loading} className="flex-1 bg-orange-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] italic shadow-xl shadow-orange-900/30 font-black">GÜNCELLE</button>
               </div>
             </form>
           </div>
