@@ -2,10 +2,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import * as XLSX from 'xlsx'
 
 export default function AIYonetimPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
   const [hamKelimeler, setHamKelimeler] = useState<any[]>([])
   const [onayliKombinasyonlar, setOnayliKombinasyonlar] = useState<any[]>([])
   const [calismaGruplari, setCalismaGruplari] = useState<any[]>([]) 
@@ -35,6 +37,62 @@ export default function AIYonetimPage() {
   }
 
   useEffect(() => { fetchKombinasyonlar() }, [])
+
+  // ÖRNEK EXCEL FORMATI OLUŞTURMA VE İNDİRME
+  const sablonuIndir = () => {
+    const data = [
+      { kelime: "elektrik, pano, sigorta", onerilen_ekip: "ELEKTRİK ATÖLYESİ" },
+      { kelime: "boru, kaynak, sızıntı", onerilen_ekip: "BORU ATÖLYESİ" },
+      { kelime: "klima, soğutma, fan", onerilen_ekip: "HAVALANDIRMA" }
+    ];
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "AI_Sablon");
+    XLSX.writeFile(wb, "Saha360_AI_Yukleme_Sablonu.xlsx");
+  }
+
+  // EXCEL YÜKLEME FONKSİYONU
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    const reader = new FileReader()
+
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const rawData: any[] = XLSX.utils.sheet_to_json(ws)
+
+        if (rawData.length === 0) throw new Error("Excel dosyası boş görünüyor.");
+
+        const formattedData = rawData.map(row => ({
+          kelime_grubu: String(row.kelime || "").split(',').map(k => k.trim().toLowerCase()).filter(k => k !== ""),
+          onerilen_ekip: row.onerilen_ekip,
+          onay_durumu: true
+        })).filter(item => item.kelime_grubu.length > 0 && item.onerilen_ekip);
+
+        const chunkSize = 500
+        for (let i = 0; i < formattedData.length; i += chunkSize) {
+          const chunk = formattedData.slice(i, i + chunkSize)
+          const { error } = await supabase.from('ai_kombinasyonlar').insert(chunk)
+          if (error) throw error
+        }
+
+        alert(`BAŞARILI: ${formattedData.length} ADET VERİ YÜKLENDİ! ✅`)
+        fetchKombinasyonlar()
+      } catch (err: any) {
+        alert("Yükleme Hatası: " + err.message)
+      } finally {
+        setUploading(false)
+        e.target.value = ""
+      }
+    }
+    reader.readAsBinaryString(file)
+  }
 
   const grupEkle = async () => {
     if (!manualKeywords || !manualTeam) return alert("Kelimeleri ve Grubu seçiniz!");
@@ -103,22 +161,39 @@ export default function AIYonetimPage() {
             </div>
           </div>
 
-          {/* TOPLU VERİ YÜKLEME ALANI (AÇIKLAMA EKLENDİ) */}
-          <div className="lg:col-span-5 bg-[#1a1c23] border border-blue-500/20 p-6 rounded-[2rem] shadow-2xl flex flex-col justify-center items-center text-center">
-             <h3 className="text-blue-400 text-[9px] mb-2 tracking-widest uppercase">📊 TOPLU VERİ YÜKLEME</h3>
+          {/* TOPLU VERİ YÜKLEME ALANI */}
+          <div className={`lg:col-span-5 bg-[#1a1c23] border border-blue-500/20 p-6 rounded-[2rem] shadow-2xl flex flex-col justify-center items-center text-center ${uploading ? 'opacity-50 cursor-wait' : ''}`}>
+             <div className="w-full flex justify-between items-center mb-4">
+                <h3 className="text-blue-400 text-[9px] tracking-widest uppercase">📊 TOPLU VERİ YÜKLEME</h3>
+                <button 
+                  onClick={sablonuIndir}
+                  className="text-[8px] bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-lg transition-all"
+                >
+                  📥 ŞABLONU İNDİR
+                </button>
+             </div>
              
              <div className="mb-3 bg-blue-600/5 p-3 rounded-xl border border-blue-500/10 w-full">
                 <p className="text-[8px] text-blue-300/80 leading-relaxed font-black uppercase">
                     FORMAT: <span className="text-white">"kelime"</span> VE <span className="text-white">"onerilen_ekip"</span> SÜTUNLARI.
-                    <br />
-                    KELİMELER ARASINA <span className="text-orange-500 text-[10px]"> ( , ) </span> EKLEYEBİLİRSİNİZ.
                 </p>
              </div>
 
-             <label className="w-full cursor-pointer bg-blue-600/5 border-2 border-dashed border-blue-500/20 p-5 rounded-2xl hover:bg-blue-600/10 transition-all group">
-               <span className="text-2xl block mb-1 group-hover:scale-110 transition-transform">📁</span>
-               <span className="text-[9px] text-blue-400 uppercase font-black">DOSYA SÜRÜKLE VEYA SEÇ</span>
-               <input type="file" accept=".xlsx, .xls" className="hidden" />
+             <label className="w-full cursor-pointer bg-blue-600/5 border-2 border-dashed border-blue-500/20 p-5 rounded-2xl hover:bg-blue-600/10 transition-all group relative overflow-hidden">
+               <span className="text-2xl block mb-1 group-hover:scale-110 transition-transform">
+                 {uploading ? '⏳' : '📁'}
+               </span>
+               <span className="text-[9px] text-blue-400 uppercase font-black">
+                 {uploading ? 'VERİLER İŞLENİYOR...' : 'DOSYA SÜRÜKLE VEYA SEÇ'}
+               </span>
+               <input 
+                 type="file" 
+                 accept=".xlsx, .xls" 
+                 className="hidden" 
+                 onChange={handleFileUpload}
+                 disabled={uploading}
+               />
+               {uploading && <div className="absolute inset-0 bg-blue-600/10 animate-pulse"></div>}
              </label>
           </div>
         </div>
@@ -126,7 +201,7 @@ export default function AIYonetimPage() {
         {/* ANA YAN YANA YAPI */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* SOL: ÖNERİLER (7 Kolon Kaplar - 5 Sütun Grid) */}
+          {/* SOL: ÖNERİLER */}
           <div className="lg:col-span-7 space-y-4">
             <div className="flex items-center gap-3 border-l-4 border-orange-600 pl-3">
               <h2 className="text-orange-500 text-xs tracking-tighter">🔥 SAHADAN GELEN ÖNERİLER</h2>
@@ -158,7 +233,7 @@ export default function AIYonetimPage() {
             </div>
           </div>
 
-          {/* SAĞ: ONAYLANANLAR (5 Kolon Kaplar - 3 Sütun Grid) */}
+          {/* SAĞ: ONAYLANANLAR */}
           <div className="lg:col-span-5 space-y-4">
             <div className="flex items-center gap-3 border-l-4 border-blue-600 pl-3">
               <h2 className="text-blue-500 text-xs tracking-tighter">✅ ONAYLANMIŞ GRUPLAR</h2>

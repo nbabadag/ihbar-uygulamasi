@@ -52,7 +52,8 @@ export default function YeniIhbar() {
 
     setLoading(true)
     
-    const { error } = await supabase.from('ihbarlar').insert([
+    // 1. İhbarı Kaydet
+    const { data: yeniIhbar, error: ihbarError } = await supabase.from('ihbarlar').insert([
       { 
         musteri_adi: ihbarVeren, 
         ihbar_veren_tel: telefon, 
@@ -63,15 +64,56 @@ export default function YeniIhbar() {
         atanan_personel: atamaTuru === 'personel' ? (seciliAtanan || null) : null,
         atanan_grup_id: atamaTuru === 'grup' ? (seciliAtanan || null) : null
       }
-    ])
+    ]).select().single()
     
-    if (error) {
-      alert('Hata: ' + error.message)
+    if (ihbarError) {
+      alert('Hata: ' + ihbarError.message)
       setLoading(false)
-    } else {
-      alert('İhbar başarıyla kaydedildi! Personel işi başlattığında konum alınacaktır.')
-      router.push('/dashboard')
+      return;
     }
+
+    // --- 🔔 BİLDİRİM TETİKLEYİCİ MANTIK (YENİ EKLENDİ) ---
+    try {
+      const simdi = new Date();
+      const turkiyeZamani = new Date(simdi.toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
+      const toplamDakika = turkiyeZamani.getHours() * 60 + turkiyeZamani.getMinutes();
+      const isMesaiSaatleri = toplamDakika >= 480 && toplamDakika <= 1020; // 08:00 - 17:00
+
+      // Bildirim ayarlarını Admin panelinden çek
+      const { data: settings } = await supabase.from('notification_settings').select('*');
+      
+      const insertBildirim = async (eventType: string, mesaj: string) => {
+        const setting = settings?.find(s => s.event_type === eventType);
+        if (setting && setting.target_roles?.length > 0) {
+          await supabase.from('bildirimler').insert([{
+            ihbar_id: yeniIhbar.id,
+            mesaj: mesaj,
+            heget_roller: setting.target_roles,
+            is_read: false
+          }]);
+        }
+      };
+
+      // Senaryo 1: Genel Havuz Bildirimi
+      await insertBildirim('havuz_ihbar', `YENİ İHBAR: ${ihbarVeren} - ${konu}`);
+
+      // Senaryo 2: Kişiye Özel Atama Bildirimi
+      if (seciliAtanan) {
+        await insertBildirim('ihbar_atandi', `SİZE BİR İŞ ATANDI: ${konu}`);
+      }
+
+      // Senaryo 3: Mesai Saati Dışı Bildirimi
+      if (!isMesaiSaatleri) {
+        await insertBildirim('mesai_disi_ihbar', `🔴 MESAİ DIŞI KAYIT: ${ihbarVeren}`);
+      }
+
+    } catch (err) {
+      console.error("Bildirim gönderilemedi:", err);
+    }
+    // --- 🔔 BİLDİRİM TETİKLEYİCİ SONU ---
+
+    alert('İhbar başarıyla kaydedildi! Personel işi başlattığında konum alınacaktır.')
+    router.push('/dashboard')
   }
 
   return (
