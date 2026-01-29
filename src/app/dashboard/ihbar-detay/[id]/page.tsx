@@ -6,13 +6,10 @@ import { useRouter, useParams } from 'next/navigation'
 export default function IhbarDetay() {
   const { id } = useParams()
   const router = useRouter()
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
   
   const [ihbar, setIhbar] = useState<any>(null)
   const [personeller, setPersoneller] = useState<any[]>([])
-  const [malzemeKatalog, setMalzemeKatalog] = useState<any[]>([])
-  const [kullanilanlar, setKullanilanlar] = useState<any[]>([])
-  
+  const [gruplar, setGruplar] = useState<any[]>([])
   const [nesneListesi, setNesneListesi] = useState<any[]>([])
   const [nesneSearch, setNesneSearch] = useState('')
   const [secilenNesne, setSecilenNesne] = useState<any>(null)
@@ -20,84 +17,24 @@ export default function IhbarDetay() {
   const [userRole, setUserRole] = useState('')
   const [userId, setUserId] = useState('')
   const [userName, setUserName] = useState('')
-  const [personelNotu, setPersonelNotu] = useState('')
+  
+  // Düzenlenebilir Alanlar (Çağrı Merkezi Yetkisi Dahil)
+  const [editKonu, setEditKonu] = useState('')
+  const [editAciklama, setEditAciklama] = useState('')
   const [ifsNo, setIfsNo] = useState('')
-  const [miktar, setMiktar] = useState(0)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [secilenMalzeme, setSecilenMalzeme] = useState<any>(null)
   const [seciliAtanan, setSeciliAtanan] = useState('')
+  const [seciliGrup, setSeciliGrup] = useState('')
+  const [personelNotu, setPersonelNotu] = useState('')
+  
   const [loading, setLoading] = useState(false)
 
-  // --- 🔔 BİLDİRİM GÖNDERME MOTORU ---
-  const sendAutoNotification = async (eventType: string, mesaj: string) => {
-    try {
-      const { data: settings, error } = await supabase
-        .from('notification_settings')
-        .select('*')
-        .eq('event_type', eventType)
-        .single();
-        
-      if (settings && settings.target_roles?.length > 0) {
-        await supabase.from('bildirimler').insert([{
-          ihbar_id: id,
-          mesaj: mesaj,
-          islem_yapan_ad: userName || 'Sistem',
-          heget_roller: settings.target_roles,
-          is_read: false
-        }]);
-      }
-    } catch (err) {
-      console.error("Bildirim hatası:", err);
-    }
-  };
-
-  // --- 🔐 YETKİ KONTROLLERİ (GELİŞTİRİLMİŞ) ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
-  
-  // Yetki gruplarını tüm yazım varyasyonlarını kapsayacak şekilde tanımlıyoruz
+  const isCagriMerkezi = normalizedRole.includes('ÇAĞRI') || normalizedRole.includes('CAGRI') || normalizedRole.includes('MERKEZ');
   const isAdmin = normalizedRole.includes('ADMIN');
   const isMudur = normalizedRole.includes('MÜDÜR') || normalizedRole.includes('MUDUR');
-  const isMuhendis = normalizedRole.includes('MÜH') || normalizedRole.includes('MUH');
-  const isFormen = normalizedRole.includes('FORMEN');
-  const isCagri = normalizedRole.includes('ÇAĞRI') || normalizedRole.includes('CAGRI') || normalizedRole.includes('MERKEZ');
-
-  // Atama ve Düzenleme Yetkisi
-  const canEditAssignment = isAdmin || isMudur || isMuhendis || isFormen || isCagri;
-
-  // İşi Havuza Geri Gönderme Yetkisi
-  const canReleaseToPool = isAdmin || isMudur || isMuhendis || isCagri;
-
-  const aiMetniAnalizEtVeOgren = async (not: string) => {
-    if (!not || not.length < 5) return;
-    const gereksizler = ['ve', 'ile', 'için', 'yaptım', 'edildi', 'yapıldı', 'tamamlandı', 'kontrol', 'geldi', 'gitti'];
-    const kelimeler = not.toLowerCase()
-      .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "")
-      .split(/\s+/)
-      .filter(k => k.length > 3 && !gereksizler.includes(k));
-
-    let onerilenEkip = "GENEL SAHA";
-    if (normalizedRole.includes('ELEKTRİK') || normalizedRole.includes('ELEKTRIK')) onerilenEkip = "ELEKTRİK EKİBİ";
-    if (normalizedRole.includes('MEKANİK') || normalizedRole.includes('MEKANIK')) onerilenEkip = "MEKANİK EKİBİ";
-
-    for (const kelime of kelimeler) {
-      await supabase.from('ai_kutuphane').upsert({
-        kelime: kelime,
-        onerilen_ekip: onerilenEkip,
-        onay_durumu: false
-      }, { onConflict: 'kelime' });
-    }
-  };
-
-  const getGPSLocation = (): Promise<string> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve("GPS Yok"); return; }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
-        () => resolve("Konum Alınamadı"),
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    });
-  };
+  
+  const canEditIhbar = isCagriMerkezi || isAdmin || isMudur; 
+  const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
 
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -108,160 +45,133 @@ export default function IhbarDetay() {
       setUserName(profile?.full_name || '')
     }
 
-    const [ihbarRes, pRes, mRes, kmRes, nRes] = await Promise.all([
+    const [ihbarRes, pRes, gRes, nRes] = await Promise.all([
       supabase.from('ihbarlar').select(`*, profiles:atanan_personel(full_name)`).eq('id', id).single(),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
-      supabase.from('malzemeler').select('*').order('malzeme_adi'),
-      supabase.from('ihbar_malzemeleri').select('*').eq('ihbar_id', id),
+      supabase.from('calisma_gruplari').select('*').order('grup_adi'),
       supabase.from('teknik_nesneler').select('*').order('nesne_adi')
     ])
 
     if (ihbarRes.data) {
       setIhbar(ihbarRes.data)
+      setEditKonu(ihbarRes.data.konu || '')
+      setEditAciklama(ihbarRes.data.aciklama || '')
       setIfsNo(ihbarRes.data.ifs_is_emri_no || '')
       setSeciliAtanan(ihbarRes.data.atanan_personel || '')
+      setSeciliGrup(ihbarRes.data.atanan_grup_id || '')
       setPersonelNotu(ihbarRes.data.personel_notu || '')
       
       if (ihbarRes.data.secilen_nesne_adi && nRes.data) {
         const bul = nRes.data.find(n => n.nesne_adi === ihbarRes.data.secilen_nesne_adi);
-        setSecilenNesne(bul || { nesne_adi: ihbarRes.data.secilen_nesne_adi, ifs_kodu: 'BİLİNMİYOR' });
+        setSecilenNesne(bul || { nesne_adi: ihbarRes.data.secilen_nesne_adi, ifs_kod: 'KODSUZ' });
       }
     }
-    setPersoneller(pRes.data || [])
-    setMalzemeKatalog(mRes.data || [])
-    setKullanilanlar(kmRes.data || [])
+    setPersoneller(pRes.data?.filter(p => !p.role.toUpperCase().includes('ÇAĞRI')) || [])
+    setGruplar(gRes.data || [])
     setNesneListesi(nRes.data || [])
   }, [id])
 
-  useEffect(() => { 
-    fetchData() 
-    return () => { if(intervalRef.current) clearInterval(intervalRef.current) } 
-  }, [fetchData])
+  useEffect(() => { fetchData() }, [fetchData])
 
-  const nesneAta = async (nesne: any) => {
-    const { error } = await supabase.from('ihbarlar').update({ secilen_nesne_adi: nesne.nesne_adi }).eq('id', id);
-    if (!error) {
-      setSecilenNesne(nesne);
-      setNesneSearch('');
-      fetchData();
-    }
-  };
-
-  const malzemeEkle = async () => {
-    if (!secilenMalzeme || miktar <= 0) return alert('Malzeme ve miktar seçin!')
-    await supabase.from('ihbar_malzemeleri').insert([{
-      ihbar_id: id, malzeme_kodu: secilenMalzeme.malzeme_kodu, malzeme_adi: secilenMalzeme.malzeme_adi, kullanim_adedi: miktar
-    }])
-    setMiktar(0); setSecilenMalzeme(null); setSearchTerm(''); fetchData();
-  }
-
-  const isiBaslat = async () => {
-    setLoading(true)
-    const konum = await getGPSLocation();
-    const simdi = new Date().toISOString();
-    await supabase.from('ihbarlar').update({ 
-      durum: 'Calisiliyor', kabul_tarihi: simdi, atanan_personel: userId, guncel_konum: konum,
-      konum_gecmisi: [{ konum: konum, saat: simdi }] 
-    }).eq('id', id)
-    await supabase.from('is_zamanlari').insert([{ ihbar_id: id, personel_id: userId, baslangic_tarihi: simdi, durum: 'Devam Ediyor' }])
-    intervalRef.current = setInterval(async () => {
-        const yeniKonum = await getGPSLocation();
-        const { data: curr } = await supabase.from('ihbarlar').select('konum_gecmisi').eq('id', id).single();
-        const guncelGecmis = [...(curr?.konum_gecmisi || []), { konum: yeniKonum, saat: new Date().toISOString() }];
-        await supabase.from('ihbarlar').update({ guncel_konum: yeniKonum, konum_gecmisi: guncelGecmis }).eq('id', id);
-    }, 120000);
-    fetchData(); setLoading(false)
-  }
-
-  const isiKapatVeyaDurdur = async (yeniDurum: 'Tamamlandi' | 'Durduruldu') => {
-    if (!personelNotu) return alert("İşlem notu gerekli.");
-    if (intervalRef.current) clearInterval(intervalRef.current);
+  // --- 💾 MÜHÜRLEME VE KAYDETME ---
+  const bilgileriMuhurle = async () => {
     setLoading(true);
-    const simdi = new Date().toISOString();
-    const konum = await getGPSLocation();
-    if (yeniDurum === 'Tamamlandi') { await aiMetniAnalizEtVeOgren(personelNotu); }
-    const updates: any = { durum: yeniDurum, personel_notu: personelNotu };
-    if (yeniDurum === 'Tamamlandi') { updates.kapatma_tarihi = simdi; updates.bitis_konum = konum; }
-    await supabase.from('ihbarlar').update(updates).eq('id', id);
-    await supabase.from('is_zamanlari').update({ bitis_tarihi: simdi, durum: yeniDurum, personel_notu: personelNotu }).eq('ihbar_id', id).is('bitis_tarihi', null);
     
-    const eventKey = yeniDurum === 'Durduruldu' ? 'is_durduruldu' : 'is_tamamlandi';
-    const msg = yeniDurum === 'Durduruldu' ? `⚠️ İŞ DURDURULDU: #${id} (${ihbar?.konu})` : `✅ İŞ BİTTİ: #${id} (${ihbar?.konu})`;
-    await sendAutoNotification(eventKey, msg);
+    // İş ya Gruba ya Personele atanır. İkisi birden seçilirse Personel önceliklidir veya mantıksal ayrım yapılır.
+    const finalPersonel = seciliAtanan || null;
+    const finalGrup = seciliAtanan ? null : (seciliGrup || null); // Personel seçildiyse grubu sıfırla
 
-    if (yeniDurum === 'Tamamlandi') router.push('/dashboard');
-    else { fetchData(); setLoading(false); }
+    const { error } = await supabase.from('ihbarlar')
+      .update({ 
+        konu: editKonu.toUpperCase(),
+        aciklama: editAciklama,
+        atanan_personel: finalPersonel, 
+        atanan_grup_id: finalGrup,
+        ifs_is_emri_no: ifsNo,
+        secilen_nesne_adi: secilenNesne?.nesne_adi || null
+      }).eq('id', id);
+    
+    if(!error) {
+      alert("İŞLEM BAŞARILI: İHBAR GÜNCELLENDİ VE ATAMA YAPILDI.");
+      fetchData();
+    } else {
+      alert("Hata: " + error.message);
+    }
+    setLoading(false);
   }
 
-  const handleHavuzaAl = async () => {
-    if(!confirm("İş havuza geri gönderilsin mi?")) return;
-    setLoading(true);
-    await supabase.from('ihbarlar').update({ durum: 'Beklemede', atanan_personel: null, kabul_tarihi: null }).eq('id', id);
-    await sendAutoNotification('havuz_ihbar', `🔄 İŞ HAVUZA DÖNDÜ: #${id} (${ihbar?.konu})`);
-    router.push('/dashboard');
-  }
-
-  if (!ihbar) return <div className="p-10 text-center font-black text-white bg-[#0a0b0e] min-h-screen">YÜKLENİYOR...</div>
+  if (!ihbar) return <div className="p-10 text-center font-black text-white bg-[#0a0b0e] min-h-screen uppercase animate-pulse">VERİLER MÜHÜRLENİYOR...</div>
 
   return (
     <div className="min-h-screen flex flex-col text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
-      <div className="fixed inset-0 z-0 opacity-20 pointer-events-none" style={{ backgroundImage: "url('/logo.png')", backgroundSize: '80%', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', filter: 'brightness(0.5) contrast(1.2) grayscale(0.5)' }}></div>
-      <div className="p-3 md:p-8 max-w-7xl mx-auto space-y-6 relative z-10 w-full">
+      <div className="fixed inset-0 z-0 opacity-10 pointer-events-none flex items-center justify-center">
+        <img src="/logo.png" className="w-1/2 grayscale invert" alt="Background" />
+      </div>
+
+      <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 relative z-10 w-full font-black uppercase italic">
         
         {/* ÜST BAR */}
-        <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-4 rounded-2xl shadow-2xl border border-gray-800 font-black">
-          <button onClick={() => router.push('/dashboard')} className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/20"> GERİ DÖN </button>
-          <div className="flex items-center gap-4">
-            <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
-            <div className="text-[10px] font-black text-orange-500 uppercase italic border-l border-gray-700 pl-4 tracking-widest"> {ihbar.ifs_is_emri_no || 'IFS KAYDI YOK'} </div>
-          </div>
+        <div className="flex justify-between items-center bg-[#111318]/90 p-5 rounded-2xl border border-gray-800 shadow-2xl">
+          <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all">← DASHBOARD</button>
+          <div className="text-[10px] font-black text-orange-500 uppercase tracking-widest">{ihbar.ifs_is_emri_no || 'IFS BEKLENİYOR'}</div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* SOL PANEL: İHBAR DÜZENLEME */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 md:p-10 rounded-[3rem] shadow-2xl border border-gray-800/50 overflow-visible relative">
+            <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-8 rounded-[3rem] shadow-2xl border border-gray-800/50">
               <div className="mb-8 border-b border-gray-800 pb-6">
-                <p className="text-[9px] font-black text-orange-500 uppercase italic tracking-[0.2em] mb-2">OPERASYON DETAYI</p>
-                <h1 className="text-3xl md:text-5xl font-black text-white uppercase italic leading-none mb-3">{ihbar.musteri_adi}</h1>
-                <p className="text-lg text-blue-400 font-bold uppercase italic tracking-tight">{ihbar.konu}</p>
-              </div>
-              
-              <div className="bg-black/30 p-8 rounded-3xl border border-gray-800 mb-4 italic text-gray-300 leading-relaxed text-sm shadow-inner font-black"> 
-                "{ihbar.aciklama || 'İhbar açıklaması bulunamadı.'}" 
-              </div>
-
-              {ihbar.personel_notu && (
-                <div className="bg-orange-600/10 p-8 rounded-3xl border border-orange-500/30 mb-8 italic text-orange-400 leading-relaxed text-sm shadow-inner font-black">
-                  <span className="block text-[8px] font-black uppercase mb-1 not-italic text-orange-500 tracking-widest">🔧 PERSONEL İŞ SONU NOTU:</span>
-                  "{ihbar.personel_notu}"
-                </div>
-              )}
-
-              {/* TEKNİK NESNE SEÇİMİ */}
-              <div className="bg-[#111318] p-6 rounded-[2.5rem] border border-blue-500/30 mb-8 shadow-2xl relative overflow-visible z-[50]">
-                <h3 className="text-blue-400 text-[10px] font-black uppercase italic mb-4 tracking-widest flex items-center gap-2">
-                  <span className="animate-pulse">●</span> TEKNİK NESNE / VARLIK SEÇİMİ
-                </h3>
-                {secilenNesne ? (
-                  <div className="flex items-center justify-between bg-blue-600/10 border border-blue-500/40 p-4 rounded-2xl mb-4 font-black">
-                    <div>
-                      <div className="text-white text-xs font-black uppercase">{secilenNesne.nesne_adi}</div>
-                      <div className="text-blue-400 text-[9px] font-black mt-1 uppercase">IFS KODU: {secilenNesne.ifs_kodu}</div>
-                    </div>
-                    <button onClick={async () => { await supabase.from('ihbarlar').update({ secilen_nesne_adi: null }).eq('id', id); setSecilenNesne(null); }} className="bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white p-2 rounded-xl transition-all text-[8px] font-black">DEĞİŞTİR</button>
+                <p className="text-[9px] font-black text-orange-500 uppercase mb-2 tracking-widest">GEMİ / MÜŞTERİ</p>
+                <h1 className="text-4xl font-black text-white tracking-tighter mb-4">{ihbar.musteri_adi}</h1>
+                
+                {canEditIhbar ? (
+                  <div className="space-y-2">
+                    <p className="text-[8px] text-gray-500 ml-2">İHBAR KONUSU (DÜZENLE)</p>
+                    <input 
+                      className="w-full bg-black/50 border border-orange-500/30 p-4 rounded-2xl text-lg text-blue-400 font-black outline-none focus:border-orange-500 transition-all"
+                      value={editKonu}
+                      onChange={(e) => setEditKonu(e.target.value)}
+                    />
                   </div>
                 ) : (
-                  <div className="relative overflow-visible font-black">
-                    <input type="text" placeholder="TEKNİK NESNE ARA..." className="w-full p-4 bg-black/50 border border-gray-800 rounded-2xl text-[10px] text-white outline-none focus:border-blue-500 transition-all font-black" value={nesneSearch} onChange={(e) => setNesneSearch(e.target.value.toUpperCase())} />
+                  <p className="text-lg text-blue-400 font-black">{ihbar.konu}</p>
+                )}
+              </div>
+
+              <div className="bg-black/30 p-8 rounded-3xl border border-gray-800 mb-8 shadow-inner">
+                <p className="text-[8px] font-black text-gray-500 mb-2 tracking-widest">📝 İHBAR AÇIKLAMASI (DÜZENLE)</p>
+                {canEditIhbar ? (
+                  <textarea 
+                    className="w-full bg-transparent border-none text-gray-300 text-sm outline-none resize-none font-black italic"
+                    rows={4}
+                    value={editAciklama}
+                    onChange={(e) => setEditAciklama(e.target.value)}
+                  />
+                ) : (
+                  <p className="text-gray-300 text-sm">"{ihbar.aciklama}"</p>
+                )}
+              </div>
+
+              {/* TEKNİK NESNE / IFS KODU */}
+              <div className="bg-[#111318] p-6 rounded-3xl border border-blue-500/20">
+                <h3 className="text-blue-400 text-[10px] font-black mb-4 tracking-widest italic">⚙️ TEKNİK NESNE & IFS BİLGİSİ</h3>
+                {secilenNesne ? (
+                  <div className="flex items-center justify-between bg-blue-600/10 border border-blue-500/40 p-4 rounded-2xl">
+                    <div className="text-white text-xs font-black">{secilenNesne.nesne_adi} <span className="text-blue-400 ml-2">[{secilenNesne.ifs_kod}]</span></div>
+                    {canEditAssignment && (
+                      <button onClick={() => setSecilenNesne(null)} className="text-[8px] font-black text-red-500 bg-red-900/10 px-3 py-2 rounded-xl border border-red-900/20">DEĞİŞTİR</button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="relative font-black">
+                    <input type="text" placeholder="VARLIK VEYA IFS KODU ARA..." className="w-full p-4 bg-black/50 border border-gray-800 rounded-2xl text-[10px] text-white outline-none focus:border-blue-500" value={nesneSearch} onChange={(e) => setNesneSearch(e.target.value.toUpperCase())} />
                     {nesneSearch && (
-                      <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-60 overflow-y-auto z-[999] shadow-[0_20px_50px_rgba(0,0,0,0.9)] custom-scrollbar font-black">
-                        {nesneListesi.filter(n => (n.nesne_adi && n.nesne_adi.includes(nesneSearch)) || (n.ifs_kodu && n.ifs_kodu.includes(nesneSearch))).map(n => (
-                          <div key={n.id} onClick={() => nesneAta(n)} className="p-4 hover:bg-blue-600/20 border-b border-gray-800/50 cursor-pointer flex justify-between items-center transition-colors">
-                            <div>
-                              <div className="text-[10px] font-black text-white">{n.nesne_adi}</div>
-                              <div className="text-[8px] text-gray-500 font-black">{n.ifs_kodu || 'KOD YOK'}</div>
-                            </div>
-                            <div className="text-blue-500 text-[10px] font-black italic uppercase">SEÇ →</div>
+                      <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-48 overflow-y-auto z-[999] shadow-2xl custom-scrollbar">
+                        {nesneListesi.filter(n => n.nesne_adi.includes(nesneSearch) || n.ifs_kod?.includes(nesneSearch)).map(n => (
+                          <div key={n.id} onClick={() => { setSecilenNesne(n); setNesneSearch(''); }} className="p-4 hover:bg-blue-600/20 border-b border-gray-800/50 cursor-pointer flex justify-between">
+                            <span className="text-[10px] font-black">{n.nesne_adi}</span>
+                            <span className="text-blue-500 text-[9px] font-black">{n.ifs_kod}</span>
                           </div>
                         ))}
                       </div>
@@ -269,118 +179,70 @@ export default function IhbarDetay() {
                   </div>
                 )}
               </div>
-
-              {/* MALZEME LİSTESİ */}
-              <div className="mt-10">
-                <h3 className="font-black text-[10px] text-gray-500 uppercase mb-4 italic tracking-widest text-white">📦 MALZEME SARFİYATI</h3>
-                <div className="overflow-hidden rounded-3xl border border-gray-800 shadow-2xl">
-                  <table className="w-full text-left font-black">
-                    <thead className="bg-[#111318] text-orange-500 text-[9px] font-black uppercase italic tracking-widest">
-                      <tr><th className="p-4">KOD</th><th className="p-4">MALZEME</th><th className="p-4 text-right">ADET</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-800 text-xs font-bold uppercase italic text-gray-200 bg-black/20">
-                      {kullanilanlar && kullanilanlar.length > 0 ? ( 
-                        kullanilanlar.map((k, index) => ( 
-                          <tr key={k.id || index} className="hover:bg-white/5 transition-colors">
-                            <td className="p-4 text-orange-400 font-black">{k.malzeme_kodu}</td>
-                            <td className="p-4">{k.malzeme_adi}</td>
-                            <td className="p-4 text-right text-blue-400 font-black">{k.kullanim_adedi}</td>
-                          </tr> 
-                        )) 
-                      ) : ( 
-                        <tr><td colSpan={3} className="p-10 text-center text-gray-600 tracking-tighter">Henüz sarfiyat girilmedi</td></tr> 
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* SAĞ PANEL: İŞLEM VE YÖNETİCİ KONTROLLERİ */}
+          {/* SAĞ PANEL: ATAMA VE KOORDİNASYON */}
           <div className="space-y-6">
-            {ihbar.durum === 'Calisiliyor' ? (
-              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-2xl border border-orange-500/30">
-                <h3 className="font-black text-lg mb-6 text-white italic uppercase flex items-center gap-3 font-black"> <span className="w-3 h-3 bg-orange-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(249,115,22,1)]"></span> İŞLEM PANELİ </h3>
-                <div className="space-y-4 mb-6">
-                  <input type="text" placeholder="🔍 MALZEME ARA..." className="w-full p-4 border border-gray-700 rounded-2xl font-black text-[10px] bg-black/40 text-white placeholder-gray-500 outline-none" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
-                  {searchTerm && (
-                    <div className="bg-[#111318] border border-gray-700 rounded-xl max-h-40 overflow-auto shadow-2xl z-20 relative custom-scrollbar font-black">
-                      {malzemeKatalog.filter(m => m.malzeme_adi.toLowerCase().includes(searchTerm.toLowerCase())).map(m => ( <div key={m.id} onClick={()=>{setSecilenMalzeme(m); setSearchTerm('')}} className="p-4 hover:bg-orange-600/10 cursor-pointer text-[9px] font-black border-b border-gray-800 uppercase flex justify-between text-gray-300"> <span>{m.malzeme_adi}</span><span className="text-orange-500 font-black">[{m.malzeme_kodu}]</span> </div> ))}
-                    </div>
-                  )}
-                  {secilenMalzeme && (
-                    <div className="flex items-center gap-2 p-4 bg-orange-600/10 rounded-2xl border border-orange-500/30 shadow-inner font-black">
-                      <span className="text-[9px] font-black uppercase flex-1 truncate text-white">✅ {secilenMalzeme.malzeme_adi}</span>
-                      <input type="number" className="w-16 p-2 bg-black/50 border border-gray-700 rounded-lg font-black text-center text-white font-black" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
-                      <button onClick={malzemeEkle} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-black text-[9px] font-black">EKLE</button>
-                    </div>
-                  )}
-                </div>
-                <textarea className="w-full p-4 border border-gray-700 rounded-2xl bg-black/40 text-[11px] font-black mb-6 text-white placeholder-gray-500 outline-none" placeholder="İşlem notu girin..." rows={5} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value)} />
-                <div className="flex flex-col gap-3">
-                    <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-3xl font-black shadow-xl uppercase italic text-xl active:scale-95 transition-all">🏁 İŞİ BİTİR</button>
-                    <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-orange-600/20 text-orange-500 border border-orange-600/30 py-4 rounded-3xl font-black shadow-lg uppercase italic text-[10px] active:scale-95 transition-all">⚠️ İŞİ DURDUR</button>
-                </div>
-              </div>
-            ) : ihbar.durum !== 'Tamamlandi' && (
-              <button onClick={isiBaslat} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-12 rounded-[3rem] font-black shadow-2xl uppercase italic text-3xl animate-pulse active:scale-95 transition-all">🚀 İŞE BAŞLA</button>
-            )}
-            
-            {/* YÖNETİCİ VE ÇAĞRI MERKEZİ KONTROLLERİ */}
             {canEditAssignment && (
-              <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] shadow-xl border-t-8 border-orange-600 font-black">
-                <h3 className="font-black text-[10px] uppercase text-white mb-6 italic tracking-[0.2em]">YÖNETİCİ KONTROLLERİ</h3>
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <p className="text-[8px] font-black text-gray-600 ml-4">IFS İŞ EMRİ NO</p>
-                    <input placeholder="GİRİŞ YAPIN..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] text-orange-500 outline-none font-black" value={ifsNo} onChange={e=>setIfsNo(e.target.value)} />
+              <div className="bg-[#111318]/95 p-8 rounded-[2.5rem] border-t-8 border-orange-600 shadow-2xl font-black">
+                <h3 className="text-[11px] font-black text-white mb-8 tracking-tighter uppercase italic">KOORDİNASYON VE ATAMA</h3>
+                
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-[8px] font-black text-gray-600 ml-4 mb-1">IFS İŞ EMRİ NO</p>
+                    <input className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] text-orange-500 outline-none focus:border-orange-500" value={ifsNo} onChange={e=>setIfsNo(e.target.value.toUpperCase())} />
                   </div>
-                  <div className="space-y-1 font-black">
-                    <p className="text-[8px] font-black text-gray-600 ml-4">PERSONEL ATAMASI</p>
-                    <select value={seciliAtanan} onChange={e=>setSeciliAtanan(e.target.value)} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] uppercase text-white outline-none font-black">
-                      <option value="">PERSONEL SEÇİN...</option>
-                      {personeller.map(p => <option key={p.id} value={p.id} className="bg-[#1a1c23]">{p.full_name}</option>)}
-                    </select>
+
+                  {/* GRUP VEYA PERSONEL SEÇİM MANTIĞI */}
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-[8px] font-black text-gray-500 ml-4 mb-1">A) ATÖLYE / GRUP ATA</p>
+                      <select 
+                        value={seciliGrup} 
+                        onChange={e => { setSeciliGrup(e.target.value); setSeciliAtanan(''); }} 
+                        className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] text-orange-500 outline-none cursor-pointer"
+                      >
+                        <option value="">-- GRUP SEÇİLMEMİŞ --</option>
+                        {gruplar.map(g => <option key={g.id} value={g.id} className="bg-[#1a1c23]">{g.grup_adi}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="text-center text-[8px] text-gray-700">-- VEYA --</div>
+
+                    <div>
+                      <p className="text-[8px] font-black text-gray-500 ml-4 mb-1">B) MÜNFERİT PERSONEL ATA</p>
+                      <select 
+                        value={seciliAtanan} 
+                        onChange={e => { setSeciliAtanan(e.target.value); setSeciliGrup(''); }} 
+                        className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl font-black text-[10px] text-white outline-none cursor-pointer"
+                      >
+                        <option value="">-- ŞAHIS SEÇİLMEMİŞ --</option>
+                        {personeller.map(p => <option key={p.id} value={p.id} className="bg-[#1a1c23]">{p.full_name}</option>)}
+                      </select>
+                    </div>
                   </div>
+
                   <button 
-                    onClick={async () => { 
-                      setLoading(true);
-                      const { error } = await supabase
-                        .from('ihbarlar')
-                        .update({ atanan_personel: seciliAtanan || null, ifs_is_emri_no: ifsNo })
-                        .eq('id', id);
-                      
-                      if (error) {
-                        alert("Güncelleme Hatası: " + error.message);
-                      } else {
-                        await sendAutoNotification('ihbar_atandi', `👤 SİZE YENİ İŞ ATANDI: #${id} (${ihbar?.konu})`);
-                        fetchData(); 
-                        alert("İş Emri ve Personel Güncellendi."); 
-                      }
-                      setLoading(false);
-                    }} 
+                    onClick={bilgileriMuhurle}
                     disabled={loading}
-                    className="w-full bg-white text-black py-4 rounded-2xl font-black text-[9px] uppercase hover:bg-orange-500 hover:text-white transition-all duration-300 font-black"
+                    className="w-full bg-white text-black py-5 rounded-3xl font-black text-[10px] hover:bg-orange-500 hover:text-white transition-all shadow-xl active:scale-95"
                   >
-                    {loading ? 'İŞLENİYOR...' : 'BİLGİLERİ GÜNCELLE'}
+                    {loading ? 'SİSTEME İŞLENİYOR...' : 'DEĞİŞİKLİKLERİ VE ATAMAYI KAYDET'}
                   </button>
                 </div>
               </div>
             )}
-            
-            {canReleaseToPool && ( 
-              <button 
-                onClick={handleHavuzaAl} 
-                className="w-full text-gray-600 hover:text-red-500 font-black uppercase italic text-[8px] pt-4 transition-all tracking-widest text-white font-black"
-              >
-                ❌ BU İŞİ HAVUZA GERİ GÖNDER
-              </button> 
-            )}
+
+            <div className="bg-black/20 p-6 rounded-[2rem] border border-gray-900 text-center font-black uppercase italic">
+               <p className="text-[9px] text-gray-600 mb-1">Mevcut Durum</p>
+               <p className="text-xl text-orange-500">{ihbar.durum}</p>
+            </div>
           </div>
+
         </div>
       </div>
-      <style jsx>{` .custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 10px; } `}</style>
+      <style jsx>{` .custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; } `}</style>
     </div>
   )
 }
