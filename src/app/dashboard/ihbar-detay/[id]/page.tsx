@@ -27,6 +27,7 @@ export default function IhbarDetay() {
   // --- 👤 KULLANICI VE YETKİ ---
   const [userRole, setUserRole] = useState('')
   const [userId, setUserId] = useState('')
+  const [userName, setUserName] = useState('')
   const [userMemberGroups, setUserMemberGroups] = useState<string[]>([])
 
   // --- ✏️ FORM VERİLERİ ---
@@ -46,7 +47,7 @@ export default function IhbarDetay() {
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
 
-  // --- 🔍 ARAMA FİLTRELEME (PERFORMANS VE HATA DÜZELTMESİ) ---
+  // --- 🔍 ARAMA FİLTRELEME ---
   const filtrelenmişMalzemeler = useMemo(() => {
     if (!malzemeSearch) return [];
     return malzemeKatalog.filter(m => 
@@ -66,8 +67,9 @@ export default function IhbarDetay() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       setUserId(user.id)
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
       setUserRole(profile?.role || '')
+      setUserName(profile?.full_name || '')
       const { data: memberGroups } = await supabase.from('grup_uyeleri').select('grup_id').eq('profil_id', user.id);
       setUserMemberGroups(memberGroups?.map(g => g.grup_id) || []);
     }
@@ -130,15 +132,45 @@ export default function IhbarDetay() {
     fetchData(); setLoading(false);
   }
 
+  // --- 🔔 BİLDİRİM TETİKLEYİCİ (DÜZELTİLDİ: hedef_roller) ---
+  const bildirimGonder = async (mesaj: string, roller: string[]) => {
+    const { error } = await supabase.from('bildirimler').insert({
+      ihbar_id: id,
+      mesaj: mesaj,
+      hedef_roller: roller, // HATA BURADAYDI: "heget" -> "hedef" yapıldı.
+      is_read: false,
+      islem_yapan_ad: userName
+    });
+    if(error) console.error("Bildirim Hatası:", error.message);
+  };
+
+  // --- ⚠️ İŞİ DURDURMA VE KAPATMA ---
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
-    await supabase.from('ihbarlar').update({ 
+    
+    const { error } = await supabase.from('ihbarlar').update({ 
       durum: stat, 
       personel_notu: personelNotu, 
       kapatma_tarihi: stat === 'Tamamlandi' ? new Date().toISOString() : null 
     }).eq('id', id);
-    if (stat === 'Tamamlandi') router.push('/dashboard'); else fetchData();
+
+    if (!error) {
+      const mesaj = stat === 'Tamamlandi' ? `✅ İŞ TAMAMLANDI: ${ihbar.musteri_adi}` : `⚠️ İŞ DURDURULDU: ${ihbar.musteri_adi}`;
+      const roller = stat === 'Tamamlandi' ? ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS'] : ['ÇAĞRI MERKEZİ', 'FORMEN'];
+      
+      // Bildirim gönderimi sütun ismi düzeldiği için artık takılmayacak
+      await bildirimGonder(mesaj, roller);
+
+      if (stat === 'Tamamlandi') {
+        router.push('/dashboard'); 
+      } else {
+        await fetchData();
+        alert("İŞ DURDURULDU.");
+      }
+    } else {
+      alert("Hata: " + error.message);
+    }
     setLoading(false);
   }
 
@@ -155,7 +187,7 @@ export default function IhbarDetay() {
     alert("KAYDEDİLDİ"); fetchData(); setLoading(false);
   }
 
-  if (!ihbar) return <div className="p-10 text-white bg-[#0a0b0e] min-h-screen font-black uppercase italic text-center animate-pulse">VERİLER MÜHÜRLENİYOR...</div>
+  if (!ihbar) return <div className="p-10 text-white bg-[#0a0b0e] min-h-screen font-black uppercase italic text-center animate-pulse text-[10px]">VERİLER MÜHÜRLENİYOR...</div>
 
   return (
     <div className="min-h-screen flex flex-col text-white font-sans bg-[#0a0b0e] font-black uppercase italic">
@@ -183,21 +215,21 @@ export default function IhbarDetay() {
                 ) : ( <p className="text-gray-300 text-sm">"{ihbar.aciklama}"</p> )}
               </div>
 
-              {/* ⚙️ TEKNİK NESNE / VARLIK */}
+              {/* ⚙️ TEKNİK NESNE */}
               <div className="bg-[#111318] p-6 rounded-3xl border border-blue-500/20 mb-8 font-black uppercase italic">
-                <p className="text-blue-400 text-[10px] mb-4 tracking-widest uppercase">⚙️ TEKNİK NESNE & VARLIK</p>
+                <p className="text-blue-400 text-[10px] mb-4 tracking-widest uppercase italic font-black">⚙️ TEKNİK NESNE & VARLIK</p>
                 {secilenNesne ? (
                   <div className="flex justify-between items-center bg-blue-600/10 p-4 rounded-2xl border border-blue-500/40 font-black italic">
-                    <span className="text-xs">{secilenNesne.nesne_adi} <span className="text-blue-400 ml-2">[{secilenNesne.ifs_kod}]</span></span>
+                    <span className="text-xs font-black italic">{secilenNesne.nesne_adi} <span className="text-blue-400 ml-2">[{secilenNesne.ifs_kod}]</span></span>
                     {canEditAssignment && <button onClick={() => setSecilenNesne(null)} className="text-[8px] text-red-500 bg-red-900/10 px-3 py-1 rounded-lg">DEĞİŞTİR</button>}
                   </div>
                 ) : (
-                  <div className="relative">
-                    <input type="text" placeholder="NESNE VEYA KOD ARA..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black" value={nesneSearch} onChange={e => setNesneSearch(e.target.value)} />
+                  <div className="relative font-black">
+                    <input type="text" placeholder="NESNE VEYA KOD ARA..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black italic" value={nesneSearch} onChange={e => setNesneSearch(e.target.value)} />
                     {filtrelenmişNesneler.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-40 overflow-y-auto z-50">
                         {filtrelenmişNesneler.map(n => (
-                          <div key={n.id} onMouseDown={() => { setSecilenNesne(n); setNesneSearch(''); }} className="p-4 hover:bg-blue-600/20 cursor-pointer text-[10px] border-b border-gray-800 font-black">{n.nesne_adi} [{n.ifs_kod}]</div>
+                          <div key={n.id} onMouseDown={() => { setSecilenNesne(n); setNesneSearch(''); }} className="p-4 hover:bg-blue-600/20 cursor-pointer text-[10px] border-b border-gray-800 font-black italic">{n.nesne_adi} [{n.ifs_kod}]</div>
                         ))}
                       </div>
                     )}
@@ -205,29 +237,27 @@ export default function IhbarDetay() {
                 )}
               </div>
 
-              {/* 📦 MALZEME YÖNETİMİ (ARAMA DÜZELTİLDİ) */}
+              {/* 📦 MALZEME YÖNETİMİ */}
               {ihbar.durum === 'Calisiliyor' && (
                 <div className="pt-8 border-t border-gray-800 space-y-6">
                   <p className="text-orange-500 text-[10px] tracking-widest font-black uppercase italic">📦 MALZEME KULLANIMI</p>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="relative">
-                      <input type="text" placeholder="MALZEME ARA (Örn: Kablo)..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black" value={malzemeSearch} onChange={e=>setMalzemeSearch(e.target.value)} />
+                    <div className="relative font-black">
+                      <input type="text" placeholder="MALZEME ARA..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black italic" value={malzemeSearch} onChange={e=>setMalzemeSearch(e.target.value)} />
                       {filtrelenmişMalzemeler.length > 0 && (
                         <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-40 overflow-y-auto z-[100] shadow-2xl">
                           {filtrelenmişMalzemeler.map(m => (
-                            <div key={m.id} onMouseDown={()=>{setSecilenMalzeme(m); setMalzemeSearch('');}} className="p-4 hover:bg-orange-600/20 border-b border-gray-800 cursor-pointer text-[10px] font-black uppercase italic">{m.malzeme_adi}</div>
+                            <div key={m.id} onMouseDown={()=>{setSecilenMalzeme(m); setMalzemeSearch('');}} className="p-4 hover:bg-orange-600/20 border-b border-gray-800 cursor-pointer text-[10px] font-black italic uppercase">{m.malzeme_adi}</div>
                           ))}
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-2">
-                      <input type="number" className="w-16 p-4 bg-black/40 border border-gray-700 rounded-2xl text-center font-black" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
-                      <button onClick={malzemeEkle} className="flex-1 bg-blue-600 rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">EKLE</button>
+                    <div className="flex gap-2 font-black">
+                      <input type="number" className="w-16 p-4 bg-black/40 border border-gray-700 rounded-2xl text-center font-black italic" value={miktar} onChange={e=>setMiktar(Number(e.target.value))} />
+                      <button onClick={malzemeEkle} className="flex-1 bg-blue-600 rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all italic">EKLE</button>
                     </div>
                   </div>
-                  {secilenMalzeme && <p className="text-[9px] text-blue-400 ml-4 animate-pulse font-black italic uppercase">SEÇİLDİ: {secilenMalzeme.malzeme_adi}</p>}
-                  
-                  <div className="bg-black/20 p-4 rounded-2xl border border-gray-800 font-black">
+                  <div className="bg-black/20 p-4 rounded-2xl border border-gray-800 font-black italic">
                     {kullanilanlar.map((k, i) => (
                       <div key={i} className="flex justify-between items-center text-[10px] py-2 border-b border-gray-800/40 italic uppercase font-black">
                         <span>{k.malzeme_adi}</span>
@@ -250,6 +280,7 @@ export default function IhbarDetay() {
                   <p className="text-[10px] text-gray-500 font-black italic uppercase tracking-widest text-center">İŞLEM RAPORU</p>
                   <textarea className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[11px] outline-none font-black italic uppercase" rows={4} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value.toUpperCase())} />
                   <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 py-6 rounded-3xl text-xl shadow-xl font-black italic uppercase active:scale-95 transition-all">🏁 İŞİ BİTİR</button>
+                  {/* DURDURMA BUTONU ARTIK SORUNSUZ ÇALIŞACAK */}
                   <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-red-900/40 text-red-500 py-3 rounded-2xl text-[10px] font-black italic uppercase border border-red-900/50">⚠️ İŞİ DURDUR</button>
                 </div>
               ) : (
@@ -261,8 +292,8 @@ export default function IhbarDetay() {
 
             {canEditAssignment && (
               <div className="bg-[#111318] p-8 rounded-[2.5rem] border-t-8 border-orange-600 space-y-4 shadow-2xl font-black italic uppercase">
-                <p className="text-[10px] tracking-widest uppercase font-black">KOORDİNASYON / ATAMA</p>
-                <input className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] text-orange-500 font-black" value={ifsNo} placeholder="IFS NO" onChange={e=>setIfsNo(e.target.value.toUpperCase())} />
+                <p className="text-[10px] tracking-widest uppercase font-black italic">KOORDİNASYON / ATAMA</p>
+                <input className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] text-orange-500 font-black italic" value={ifsNo} placeholder="IFS NO" onChange={e=>setIfsNo(e.target.value.toUpperCase())} />
                 <select value={seciliGrup} onChange={e => { setSeciliGrup(e.target.value); setSeciliAtanan(''); }} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] text-orange-500 outline-none font-black uppercase italic">
                   <option value="">-- ATÖLYE SEÇ --</option>
                   {gruplar.map(g => <option key={g.id} value={g.id} className="bg-black">{g.grup_adi}</option>)}

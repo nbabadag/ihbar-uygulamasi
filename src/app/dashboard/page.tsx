@@ -18,6 +18,15 @@ export default function DashboardPage() {
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [isBildirimAcik, setIsBildirimAcik] = useState(false)
 
+  // --- 🔔 SESLİ BİLDİRİM FONKSİYONU ---
+  const playNotificationSound = useCallback(() => {
+    const audio = new Audio('/notification.mp3');
+    audio.play().catch(() => {
+      // Tarayıcı etkileşim beklediği için hata verebilir, sessizce geçilir.
+      console.log("Ses çalmak için kullanıcı etkileşimi bekleniyor.");
+    });
+  }, []);
+
   // --- YETKİ KONTROLLERİ ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
   const isAdmin = normalizedRole.includes('ADMIN');
@@ -47,7 +56,6 @@ export default function DashboardPage() {
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
-    // 1. ADIM: Personelin dahil olduğu grupları çek (Grup işlerini görebilmesi için)
     const { data: userGroups } = await supabase
       .from('grup_uyeleri')
       .select('grup_id')
@@ -71,11 +79,10 @@ export default function DashboardPage() {
 
       let filtered = ihbarData;
 
-      // --- MÜHÜRLENMİŞ FİLTRELEME (Grup İşleri Dahil) ---
       if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
         filtered = ihbarData.filter(i => 
           (i.atanan_personel === id) || 
-          (grupIds.includes(i.atanan_grup_id)) || // GRUP ATAMASI KONTROLÜ
+          (grupIds.includes(i.atanan_grup_id)) || 
           (!isMesaiSaatleri && i.oncelik_durumu === 'VARDİYA_MODU' && i.durum === 'Beklemede' && i.atanan_personel === null && i.atanan_grup_id === null)
         );
       }
@@ -96,17 +103,25 @@ export default function DashboardPage() {
       })
     }
 
+    // --- 🔔 BİLDİRİM ÇEKME VE SES TETİKLEME (SÜTUN İSMİ DÜZELTİLDİ) ---
     const { data: bData, count } = await supabase
       .from('bildirimler')
       .select('*', { count: 'exact' })
       .eq('is_read', false)
-      .contains('heget_roller', [role.trim()])
+      .contains('hedef_roller', [role.trim().toUpperCase()]) // "heget" olan yer "hedef" yapıldı
       .order('created_at', { ascending: false })
       .limit(20)
 
+    // Eğer yeni bir bildirim varsa ses çal
+    setBildirimSayisi(prevCount => {
+      if (count !== null && count > prevCount) {
+        playNotificationSound();
+      }
+      return count || 0;
+    });
+    
     setBildirimler(bData || [])
-    setBildirimSayisi(count || 0)
-  }, [])
+  }, [playNotificationSound])
 
   useEffect(() => {
     let channel: any;
@@ -122,7 +137,13 @@ export default function DashboardPage() {
         
         channel = supabase.channel('db-changes')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => { fetchData(currentRole, user.id); })
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, () => { fetchData(currentRole, user.id); })
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, (payload) => { 
+              // Realtime'da gelen bildirim rolümüze uygunsa ses çal (SÜTUN İSMİ DÜZELTİLDİ)
+              if (payload.new.hedef_roller && payload.new.hedef_roller.includes(currentRole.toUpperCase())) {
+                 playNotificationSound();
+              }
+              fetchData(currentRole, user.id); 
+          })
           .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_kombinasyonlar' }, () => { fetchData(currentRole, user.id); })
           .subscribe()
       } else { router.push('/') }
@@ -130,7 +151,7 @@ export default function DashboardPage() {
     checkUser()
     const timer = setInterval(() => { setNow(new Date()); if (userRole && userId) fetchData(userRole, userId); }, 60000)
     return () => { clearInterval(timer); if (channel) supabase.removeChannel(channel); }
-  }, [router, fetchData, userRole, userId])
+  }, [router, fetchData, userRole, userId, playNotificationSound])
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/'); }
 
@@ -138,7 +159,6 @@ export default function DashboardPage() {
     const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
     const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && ihbar.durum === 'Beklemede';
     const oneri = aiOneriGetir(`${ihbar.konu} ${ihbar.aciklama || ''}`);
-    
     const atananIsmi = ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZ (ATANMADI)';
 
     return (
@@ -221,8 +241,8 @@ export default function DashboardPage() {
       <div className="flex-1 overflow-y-auto ml-0 md:ml-72 p-4 md:p-8 relative z-10 custom-scrollbar">
         <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-5 rounded-3xl border border-gray-800 shadow-2xl mb-8">
           <div className="flex items-center gap-4">
-             <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-             <div className="font-black uppercase italic text-xs tracking-tighter">Sefine Shipyard // Denetim Merkezi</div>
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+              <div className="font-black uppercase italic text-xs tracking-tighter">Sefine Shipyard // Denetim Merkezi</div>
           </div>
         </div>
 
@@ -262,7 +282,7 @@ export default function DashboardPage() {
       {/* BİLDİRİM ÇEKMECESİ */}
       <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-[#111318] shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-[100] transform transition-transform duration-500 ease-out p-6 flex flex-col border-l border-orange-500/20 ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex justify-between items-center mb-8">
-          <h3 className="text-xl font-black italic uppercase text-orange-500 tracking-tighter">Bildirimler</h3>
+          <h3 className="text-xl font-black italic uppercase text-orange-500 tracking-tighter">Bildirimler ({bildirimSayisi})</h3>
           <button onClick={() => setIsBildirimAcik(false)} className="bg-gray-800 hover:bg-orange-600 p-2 rounded-full text-[10px] font-black uppercase italic transition-colors">Kapat ×</button>
         </div>
         <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2">
@@ -278,7 +298,7 @@ export default function DashboardPage() {
                 <p className="text-[11px] font-black italic uppercase leading-tight mb-2 text-gray-200">{b.mesaj}</p>
                 <div className="flex justify-between items-center text-[9px] font-black text-orange-500">
                   <span>KAYIT: #{b.ihbar_id}</span>
-                  <span className="text-gray-500 italic">👤 {b.islem_yapan_ad}</span>
+                  <span className="text-gray-500 italic">👤 {b.islem_yapan_ad || 'Sistem'}</span>
                 </div>
               </div>
             ))
