@@ -47,11 +47,17 @@ export default function DashboardPage() {
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
-    // AI Kombinasyonlarını çek
+    // 1. ADIM: Personelin dahil olduğu grupları çek (Grup işlerini görebilmesi için)
+    const { data: userGroups } = await supabase
+      .from('grup_uyeleri')
+      .select('grup_id')
+      .eq('profil_id', id);
+    
+    const grupIds = userGroups?.map(g => g.grup_id) || [];
+
     const { data: komboData } = await supabase.from('ai_kombinasyonlar').select('*');
     if (komboData) setAiKombinasyonlar(komboData);
 
-    // İhbarları ve Profil bilgilerini çek (atanan_grup_id eklendi)
     const { data: ihbarData } = await supabase
       .from('ihbarlar')
       .select(`*, profiles:atanan_personel(full_name), calisma_gruplari:atanan_grup_id(grup_adi)`)
@@ -63,20 +69,19 @@ export default function DashboardPage() {
       const toplamDakika = turkiyeZamani.getHours() * 60 + turkiyeZamani.getMinutes();
       const isMesaiSaatleri = toplamDakika >= 481 && toplamDakika <= 1004;
 
-      // --- KRİTİK FİLTRELEME GÜNCELLEMESİ ---
       let filtered = ihbarData;
 
-      // Eğer Saha Personeli ise: Sadece kendisine atananları veya (vardiya modu + atanmamış) olanları görsün
+      // --- MÜHÜRLENMİŞ FİLTRELEME (Grup İşleri Dahil) ---
       if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
         filtered = ihbarData.filter(i => 
           (i.atanan_personel === id) || 
+          (grupIds.includes(i.atanan_grup_id)) || // GRUP ATAMASI KONTROLÜ
           (!isMesaiSaatleri && i.oncelik_durumu === 'VARDİYA_MODU' && i.durum === 'Beklemede' && i.atanan_personel === null && i.atanan_grup_id === null)
         );
       }
 
       setIhbarlar(filtered)
 
-      // İstatistikler (Havuz mantığı: Personel ve Grup atanmamışsa havuzdadır)
       setStats({
         bekleyen: filtered.filter(i => 
           (i.durum || '').toLowerCase().includes('beklemede') && 
@@ -134,7 +139,6 @@ export default function DashboardPage() {
     const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && ihbar.durum === 'Beklemede';
     const oneri = aiOneriGetir(`${ihbar.konu} ${ihbar.aciklama || ''}`);
     
-    // Kart üzerinde kimin atandığını göster (Personel veya Grup)
     const atananIsmi = ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZ (ATANMADI)';
 
     return (
@@ -220,18 +224,9 @@ export default function DashboardPage() {
              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
              <div className="font-black uppercase italic text-xs tracking-tighter">Sefine Shipyard // Denetim Merkezi</div>
           </div>
-          {canManageUsers && (
-            <button 
-              onClick={() => router.push('/dashboard/ai-yukleme')}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-black text-[9px] uppercase italic transition-all shadow-lg animate-pulse border border-blue-400/30"
-            >
-              🚀 Toplu Veri Yükleme
-            </button>
-          )}
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* HAVUZ SÜTUNU: SADECE HİÇ ATANMAMIŞLAR */}
           <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-yellow-500/10 h-[750px] shadow-inner">
             <h3 className="text-[10px] font-black uppercase italic mb-6 text-yellow-500 flex items-center gap-2 tracking-[0.2em]">
               <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Havuz ({stats.bekleyen})
@@ -241,7 +236,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* İŞLEMDE SÜTUNU: GRUBA VEYA PERSONELE ATANMIŞ AMA BİTMEMİŞLER */}
           <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-blue-500/10 h-[750px] shadow-inner">
             <h3 className="text-[10px] font-black uppercase italic mb-6 text-blue-400 flex items-center gap-2 tracking-[0.2em]">
               <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> İşlemde ({stats.islemde})
@@ -254,7 +248,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* BİTEN SÜTUNU */}
           <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-green-500/10 h-[750px] shadow-inner">
             <h3 className="text-[10px] font-black uppercase italic mb-6 text-green-400 flex items-center gap-2 tracking-[0.2em]">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Biten ({stats.tamamlanan})
@@ -265,9 +258,42 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      
+      {/* BİLDİRİM ÇEKMECESİ */}
+      <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-[#111318] shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-[100] transform transition-transform duration-500 ease-out p-6 flex flex-col border-l border-orange-500/20 ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="flex justify-between items-center mb-8">
+          <h3 className="text-xl font-black italic uppercase text-orange-500 tracking-tighter">Bildirimler</h3>
+          <button onClick={() => setIsBildirimAcik(false)} className="bg-gray-800 hover:bg-orange-600 p-2 rounded-full text-[10px] font-black uppercase italic transition-colors">Kapat ×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2">
+          {bildirimler.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center opacity-20 italic uppercase text-xs tracking-widest text-center">Yeni Bildirim Bulunmuyor</div>
+          ) : (
+            bildirimler.map((b) => (
+              <div key={b.id} onClick={() => { router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); setIsBildirimAcik(false); }} className={`p-4 rounded-2xl border transition-all cursor-pointer bg-[#1a1c23] hover:border-orange-500/50 ${b.mesaj?.includes('DURDURULDU') ? 'border-red-900/50' : 'border-green-900/50'}`}>
+                <div className="flex justify-between items-start mb-2">
+                  <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white ${b.mesaj?.includes('DURDURULDU') ? 'bg-red-600' : 'bg-green-600'}`}>{b.mesaj?.includes('DURDURULDU') ? 'DURDU' : 'BİTTİ'}</span>
+                  <span className="text-[8px] font-bold text-gray-600 italic">{new Date(b.created_at).toLocaleTimeString('tr-TR')}</span>
+                </div>
+                <p className="text-[11px] font-black italic uppercase leading-tight mb-2 text-gray-200">{b.mesaj}</p>
+                <div className="flex justify-between items-center text-[9px] font-black text-orange-500">
+                  <span>KAYIT: #{b.ihbar_id}</span>
+                  <span className="text-gray-500 italic">👤 {b.islem_yapan_ad}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
-      {/* BİLDİRİM ÇEKMECESİ VE STİLLER AYNI KALDI */}
-      {/* ... */}
+      {isBildirimAcik && <div onClick={() => setIsBildirimAcik(false)} className="fixed inset-0 bg-black/70 backdrop-blur-md z-[90]"></div>}
+
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #f97316; }
+      `}</style>
     </div>
   )
 }
