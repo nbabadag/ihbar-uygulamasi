@@ -22,7 +22,6 @@ export default function DashboardPage() {
   const playNotificationSound = useCallback(() => {
     const audio = new Audio('/notification.mp3');
     audio.play().catch(() => {
-      // Tarayıcı etkileşim beklediği için hata verebilir, sessizce geçilir.
       console.log("Ses çalmak için kullanıcı etkileşimi bekleniyor.");
     });
   }, []);
@@ -103,16 +102,16 @@ export default function DashboardPage() {
       })
     }
 
-    // --- 🔔 BİLDİRİM ÇEKME VE SES TETİKLEME (SÜTUN İSMİ DÜZELTİLDİ) ---
+    // --- 🔔 BİLDİRİM ÇEKME SİSTEMİ (GÜNCELLENDİ) ---
+    const cleanRole = role.trim().toUpperCase();
     const { data: bData, count } = await supabase
       .from('bildirimler')
       .select('*', { count: 'exact' })
       .eq('is_read', false)
-      .contains('hedef_roller', [role.trim().toUpperCase()]) // "heget" olan yer "hedef" yapıldı
+      .contains('hedef_roller', [cleanRole]) 
       .order('created_at', { ascending: false })
       .limit(20)
 
-    // Eğer yeni bir bildirim varsa ses çal
     setBildirimSayisi(prevCount => {
       if (count !== null && count > prevCount) {
         playNotificationSound();
@@ -135,22 +134,35 @@ export default function DashboardPage() {
         setUserRole(currentRole)
         fetchData(currentRole, user.id)
         
-        channel = supabase.channel('db-changes')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => { fetchData(currentRole, user.id); })
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, (payload) => { 
-              // Realtime'da gelen bildirim rolümüze uygunsa ses çal (SÜTUN İSMİ DÜZELTİLDİ)
-              if (payload.new.hedef_roller && payload.new.hedef_roller.includes(currentRole.toUpperCase())) {
-                 playNotificationSound();
-              }
-              fetchData(currentRole, user.id); 
+        // --- 🛰️ REALTIME SUBSCRIPTION (MÜHÜRLENDİ) ---
+        channel = supabase.channel('dashboard-realtime')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => { 
+            fetchData(currentRole, user.id); 
           })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_kombinasyonlar' }, () => { fetchData(currentRole, user.id); })
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, (payload) => { 
+              const cleanRole = currentRole.trim().toUpperCase();
+              // Gelen yeni bildirim bu kullanıcının rolüyle eşleşiyor mu?
+              if (payload.new.hedef_roller && payload.new.hedef_roller.includes(cleanRole)) {
+                  playNotificationSound();
+                  fetchData(currentRole, user.id); 
+              }
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_kombinasyonlar' }, () => { 
+            fetchData(currentRole, user.id); 
+          })
           .subscribe()
       } else { router.push('/') }
     }
     checkUser()
-    const timer = setInterval(() => { setNow(new Date()); if (userRole && userId) fetchData(userRole, userId); }, 60000)
-    return () => { clearInterval(timer); if (channel) supabase.removeChannel(channel); }
+    const timer = setInterval(() => { 
+      setNow(new Date()); 
+      if (userRole && userId) fetchData(userRole, userId); 
+    }, 60000)
+
+    return () => { 
+      clearInterval(timer); 
+      if (channel) supabase.removeChannel(channel); 
+    }
   }, [router, fetchData, userRole, userId, playNotificationSound])
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/'); }
@@ -218,7 +230,7 @@ export default function DashboardPage() {
           {canCreateJob && <NavButton label="İhbar Kayıt" icon="📢" path="/dashboard/yeni-ihbar" />}
           {canManageUsers && <NavButton label="Personel Yönetimi" icon="👤" path="/dashboard/personel-yonetimi" />}
           {canManageMaterials && <NavButton label="Malzeme Yönetimi" icon="📦" path="/dashboard/malzeme-yonetimi" />}
-          {canManageGroups && <NavButton label="Çalışma Grupları" icon="👥" path="/dashboard/calisma-gruplari" />}
+          {canManageGroups && <NavButton label="Çalışma Gruplari" icon="👥" path="/dashboard/calisma-gruplari" />}
           {canSeeTV && <NavButton label="İzleme Ekranı" icon="📺" path="/dashboard/izleme-ekrani" />}
           {canSeeReports && <NavButton label="Raporlama" icon="📊" path="/dashboard/raporlar" />}
           {canManageUsers && (

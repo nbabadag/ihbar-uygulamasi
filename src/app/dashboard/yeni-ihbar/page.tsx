@@ -88,7 +88,7 @@ export default function YeniIhbar() {
           await supabase.from('bildirimler').insert([{
             ihbar_id: yeniIhbar.id,
             mesaj: mesaj,
-            heget_roller: setting.target_roles,
+            hedef_roller: setting.target_roles,
             is_read: false
           }]);
         }
