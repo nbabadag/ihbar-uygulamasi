@@ -39,7 +39,7 @@ export default function IhbarDetay() {
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
 
-  // --- 🛰️ GPS KOORDİNAT YAKALAYICI (ZORUNLU) ---
+  // --- 🛰️ ZIRHLI GPS YAKALAYICI (KİLİTLENMEYİ ÖNLER) ---
   const getGpsPosition = (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined' || !navigator.geolocation) return resolve(null);
@@ -47,9 +47,9 @@ export default function IhbarDetay() {
         (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         (err) => {
           console.warn("GPS Alınamadı:", err.message);
-          resolve(null);
+          resolve(null); // Hata olsa da akışı bozma
         },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 3000, maximumAge: 0 } // 3 saniye bekle
       );
     });
   };
@@ -104,10 +104,10 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
-  // --- 🚀 İŞE BAŞLA (GPS ENTEGRELİ) ---
+  // --- 🚀 İŞE BAŞLA (GPS MÜHÜRLEMELİ) ---
   const isiBaslat = async () => {
     setLoading(true);
-    const pos = await getGpsPosition();
+    const pos = await getGpsPosition(); // Başlangıç konumu al
 
     const { error } = await supabase.from('ihbarlar').update({ 
       durum: 'Calisiliyor', 
@@ -131,11 +131,12 @@ export default function IhbarDetay() {
     });
   };
 
-  // --- 🏁 İŞİ BİTİR (GPS ENTEGRELİ) ---
+  // --- 🏁 İŞİ BİTİR / DURDUR (GPS MÜHÜRLEMELİ) ---
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
     
+    // Sadece "Tamamlandi" ise bitiş konumu al
     const pos = stat === 'Tamamlandi' ? await getGpsPosition() : null;
 
     const { error: updateError } = await supabase.from('ihbarlar').update({ 
