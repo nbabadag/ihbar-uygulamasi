@@ -39,6 +39,21 @@ export default function IhbarDetay() {
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
 
+  // --- 🛰️ GPS KOORDİNAT YAKALAYICI (ZORUNLU) ---
+  const getGpsPosition = (): Promise<{ lat: number; lng: number } | null> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (err) => {
+          console.warn("GPS Alınamadı:", err.message);
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    });
+  };
+
   const filtrelenmişMalzemeler = useMemo(() => {
     if (!malzemeSearch) return [];
     return malzemeKatalog.filter(m => m.malzeme_adi?.toLowerCase().includes(malzemeSearch.toLowerCase())).slice(0, 10);
@@ -89,50 +104,53 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
+  // --- 🚀 İŞE BAŞLA (GPS ENTEGRELİ) ---
   const isiBaslat = async () => {
     setLoading(true);
-    await supabase.from('ihbarlar').update({ durum: 'Calisiliyor', kabul_tarihi: new Date().toISOString(), atanan_personel: userId }).eq('id', id);
-    fetchData(); setLoading(false);
+    const pos = await getGpsPosition();
+
+    const { error } = await supabase.from('ihbarlar').update({ 
+      durum: 'Calisiliyor', 
+      kabul_tarihi: new Date().toISOString(), 
+      atanan_personel: userId,
+      enlem: pos?.lat || null, 
+      boylam: pos?.lng || null
+    }).eq('id', id);
+
+    if (error) alert(error.message); else fetchData();
+    setLoading(false);
   }
 
-  // --- 🔔 BİLDİRİM TETİKLEYİCİ (ZIRHLI VERSİYON) ---
   const bildirimGonder = async (mesaj: string, roller: string[]) => {
-    // Sütun ismi veritabanındaki "hedef_roller" ile tam eşleşecek şekilde mühürlendi
-    const { error } = await supabase.from('bildirimler').insert({
+    await supabase.from('bildirimler').insert({
       ihbar_id: id,
       mesaj: mesaj,
       hedef_roller: roller, 
       is_read: false,
       islem_yapan_ad: userName || 'Sistem'
     });
-    if (error) console.error("BİLDİRİM HATASI (SÜTUN KONTROLÜ YAPIN):", error.message);
   };
 
-  // --- ⚠️ İŞİ KAPAT / DURDUR ---
+  // --- 🏁 İŞİ BİTİR (GPS ENTEGRELİ) ---
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
     
-    // Önce ihbar durumunu güncelle
+    const pos = stat === 'Tamamlandi' ? await getGpsPosition() : null;
+
     const { error: updateError } = await supabase.from('ihbarlar').update({ 
       durum: stat, 
       personel_notu: personelNotu, 
-      kapatma_tarihi: stat === 'Tamamlandi' ? new Date().toISOString() : null 
+      kapatma_tarihi: stat === 'Tamamlandi' ? new Date().toISOString() : null,
+      bitis_enlem: pos?.lat || null, 
+      bitis_boylam: pos?.lng || null
     }).eq('id', id);
 
     if (!updateError) {
       const mesaj = stat === 'Tamamlandi' ? `✅ BİTTİ: ${ihbar.musteri_adi}` : `⚠️ DURDU: ${ihbar.musteri_adi}`;
       const roller = stat === 'Tamamlandi' ? ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS'] : ['ÇAĞRI MERKEZİ', 'FORMEN'];
-      
-      // Bildirimi gönder (hata alsa bile iş akışı durmasın diye catch-free)
       await bildirimGonder(mesaj, roller);
-
-      if (stat === 'Tamamlandi') {
-        router.push('/dashboard'); 
-      } else {
-        await fetchData();
-        alert("İŞLEM DURDURULDU.");
-      }
+      if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData();
     } else {
       alert("Hata: " + updateError.message);
     }
@@ -145,7 +163,7 @@ export default function IhbarDetay() {
     alert("KAYDEDİLDİ"); fetchData(); setLoading(false);
   }
 
-  if (!ihbar) return <div className="p-10 text-white bg-[#0a0b0e] min-h-screen text-center italic font-black uppercase">VERİLER MÜHÜRLENİYOR...</div>
+  if (!ihbar) return <div className="p-10 text-white bg-[#0a0b0e] min-h-screen text-center italic font-black uppercase">YÜKLENİYOR...</div>
 
   return (
     <div className="min-h-screen flex flex-col text-white font-sans bg-[#0a0b0e] font-black uppercase italic">
@@ -225,7 +243,7 @@ export default function IhbarDetay() {
                 </div>
               ) : (
                 <button onClick={isiBaslat} disabled={!canStartJob || loading} className={`w-full py-12 rounded-[3rem] text-3xl transition-all shadow-2xl font-black italic uppercase ${canStartJob ? 'bg-orange-600 animate-pulse active:scale-95' : 'bg-gray-800 opacity-50'}`}>
-                  {canStartJob ? '🚀 İŞE BAŞLA' : 'YETKİ YOK'}
+                  {loading ? 'GPS BEKLENİYOR...' : (canStartJob ? '🚀 İŞE BAŞLA' : 'YETKİ YOK')}
                 </button>
               )}
             </div>

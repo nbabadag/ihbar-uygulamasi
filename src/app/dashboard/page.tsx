@@ -12,6 +12,7 @@ export default function DashboardPage() {
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
+  const [userGroups, setUserGroups] = useState<string[]>([]) // 👥 Atölye isimleri için state
   const [now, setNow] = useState(new Date())
   
   const [bildirimSayisi, setBildirimSayisi] = useState(0)
@@ -33,6 +34,7 @@ export default function DashboardPage() {
   const isMuhendis = normalizedRole.includes('MÜH') || normalizedRole.includes('MUH');
   const isCagri = normalizedRole.includes('ÇAĞRI') || normalizedRole.includes('CAGRI');
   const isFormen = normalizedRole.includes('FORMEN');
+  const isSahaPersoneli = normalizedRole === 'SAHA PERSONELI'; // 👈 Saha Personeli kontrolü
 
   const canManageUsers = isAdmin || isMudur || isMuhendis;
   const canCreateJob = canManageUsers || isFormen || isCagri;
@@ -40,6 +42,7 @@ export default function DashboardPage() {
   const canSeeTV = canCreateJob;
   const canManageGroups = canManageUsers || isFormen;
   const canManageMaterials = canManageUsers || isFormen;
+  const canSeeMap = !isSahaPersoneli; // 👈 Saha personeli haritayı görmesin
 
   const aiOneriGetir = (konu: string) => {
     if (!konu || aiKombinasyonlar.length === 0) return null;
@@ -55,12 +58,15 @@ export default function DashboardPage() {
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
-    const { data: userGroups } = await supabase
+    // --- 👥 GRUP BİLGİSİNİ ÇEKME ---
+    const { data: userGroupData } = await supabase
       .from('grup_uyeleri')
-      .select('grup_id')
+      .select('grup_id, calisma_gruplari(grup_adi)')
       .eq('profil_id', id);
     
-    const grupIds = userGroups?.map(g => g.grup_id) || [];
+    const grupIds = userGroupData?.map(g => g.grup_id) || [];
+    const groupNames = userGroupData?.map((g: any) => g.calisma_gruplari?.grup_adi).filter(Boolean) || [];
+    setUserGroups(groupNames); 
 
     const { data: komboData } = await supabase.from('ai_kombinasyonlar').select('*');
     if (komboData) setAiKombinasyonlar(komboData);
@@ -78,12 +84,19 @@ export default function DashboardPage() {
 
       let filtered = ihbarData;
 
+      // --- 🔍 FİLTRELEME MANTIĞI ---
       if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
-        filtered = ihbarData.filter(i => 
-          (i.atanan_personel === id) || 
-          (grupIds.includes(i.atanan_grup_id)) || 
-          (!isMesaiSaatleri && i.oncelik_durumu === 'VARDİYA_MODU' && i.durum === 'Beklemede' && i.atanan_personel === null && i.atanan_grup_id === null)
-        );
+        filtered = ihbarData.filter(i => {
+          const isAtanmis = (i.atanan_personel === id) || (grupIds.includes(i.atanan_grup_id));
+          const isVardiyaHavuzaDustu = (!isMesaiSaatleri && i.oncelik_durumu === 'VARDİYA_MODU' && i.durum === 'Beklemede' && i.atanan_personel === null && i.atanan_grup_id === null);
+          
+          // ✅ Biten işlerde sadece kendi işini görsün
+          if ((i.durum || '').toLowerCase().includes('tamamlandi')) {
+            return i.atanan_personel === id;
+          }
+
+          return isAtanmis || isVardiyaHavuzaDustu;
+        });
       }
 
       setIhbarlar(filtered)
@@ -102,25 +115,21 @@ export default function DashboardPage() {
       })
     }
 
-    // --- 🔔 BİLDİRİM ÇEKME SİSTEMİ (GÜNCELLENDİ) ---
-    const cleanRole = role.trim().toUpperCase();
+    const cleanRole = role.trim();
+    const roleUpper = cleanRole.toUpperCase();
+    const roleAlt = roleUpper.replace(/İ/g, 'I').replace(/Ç/g, 'C').replace(/Ğ/g, 'G').replace(/Ü/g, 'U').replace(/Ş/g, 'S').replace(/Ö/g, 'O');
+    
     const { data: bData, count } = await supabase
       .from('bildirimler')
       .select('*', { count: 'exact' })
       .eq('is_read', false)
-      .contains('hedef_roller', [cleanRole]) 
+      .filter('hedef_roller', 'ov', `{${cleanRole}, ${roleUpper}, ${roleAlt}}`) 
       .order('created_at', { ascending: false })
       .limit(20)
 
-    setBildirimSayisi(prevCount => {
-      if (count !== null && count > prevCount) {
-        playNotificationSound();
-      }
-      return count || 0;
-    });
-    
+    setBildirimSayisi(count || 0);
     setBildirimler(bData || [])
-  }, [playNotificationSound])
+  }, []);
 
   useEffect(() => {
     let channel: any;
@@ -134,21 +143,24 @@ export default function DashboardPage() {
         setUserRole(currentRole)
         fetchData(currentRole, user.id)
         
-        // --- 🛰️ REALTIME SUBSCRIPTION (MÜHÜRLENDİ) ---
-        channel = supabase.channel('dashboard-realtime')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => { 
+        channel = supabase.channel('dashboard-final-sync-v101')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (payload) => { 
+            if (payload.eventType === 'INSERT') playNotificationSound();
+            if (payload.eventType === 'UPDATE') {
+                const old = payload.old;
+                const next = payload.new;
+                if (!old.atanan_personel && !old.atanan_grup_id && (next.atanan_personel || next.atanan_grup_id)) playNotificationSound();
+            }
             fetchData(currentRole, user.id); 
           })
           .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, (payload) => { 
-              const cleanRole = currentRole.trim().toUpperCase();
-              // Gelen yeni bildirim bu kullanıcının rolüyle eşleşiyor mu?
-              if (payload.new.hedef_roller && payload.new.hedef_roller.includes(cleanRole)) {
+              const userR = currentRole.toUpperCase();
+              const targets = payload.new.hedef_roller || [];
+              const isMatch = targets.some((r: string) => r.toUpperCase() === userR || userR.includes(r.toUpperCase()));
+              if (isMatch) {
                   playNotificationSound();
                   fetchData(currentRole, user.id); 
               }
-          })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_kombinasyonlar' }, () => { 
-            fetchData(currentRole, user.id); 
           })
           .subscribe()
       } else { router.push('/') }
@@ -223,7 +235,7 @@ export default function DashboardPage() {
         </div>
 
         <nav className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
-          <NavButton label="Saha Haritası" icon="🛰️" path="/dashboard/saha-haritasi" active />
+          {canSeeMap && <NavButton label="Saha Haritası" icon="🛰️" path="/dashboard/saha-haritasi" active />}
           <NavButton label="Ana Sayfa" icon="🏠" path="/dashboard" />
           <NavButton label="Bildirimler" icon="🔔" onClick={() => setIsBildirimAcik(true)} />
           <div className="h-px bg-gray-800 my-4 opacity-50"></div>
@@ -241,10 +253,20 @@ export default function DashboardPage() {
           )}
         </nav>
 
+        {/* 👤 Kullanıcı & Grup Bölümü */}
         <div className="p-4 bg-black/40 border-t border-gray-800/50">
           <div className="flex flex-col mb-3 px-2">
             <span className="text-[11px] font-black uppercase italic text-orange-500 truncate">{userName}</span>
-            <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">{userRole}</span>
+            <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest mb-1">{userRole}</span>
+            {userGroups.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {userGroups.map((grup, idx) => (
+                  <span key={idx} className="bg-blue-600/10 border border-blue-500/30 text-blue-400 text-[7px] px-2 py-0.5 rounded-full font-black uppercase italic">
+                    Atölye: {grup}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <button onClick={handleLogout} className="w-full bg-red-600 hover:bg-red-700 p-3 rounded-xl font-black text-[9px] uppercase shadow-lg transition-all active:scale-95 text-white">Oturumu Kapat</button>
         </div>
@@ -291,7 +313,7 @@ export default function DashboardPage() {
         </div>
       </div>
       
-      {/* BİLDİRİM ÇEKMECESİ */}
+      {/* ... Diğer UI elemanları (Bildirim çekmecesi vb.) aynı ... */}
       <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-[#111318] shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-[100] transform transition-transform duration-500 ease-out p-6 flex flex-col border-l border-orange-500/20 ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex justify-between items-center mb-8">
           <h3 className="text-xl font-black italic uppercase text-orange-500 tracking-tighter">Bildirimler ({bildirimSayisi})</h3>
@@ -302,9 +324,9 @@ export default function DashboardPage() {
             <div className="h-full flex flex-col items-center justify-center opacity-20 italic uppercase text-xs tracking-widest text-center">Yeni Bildirim Bulunmuyor</div>
           ) : (
             bildirimler.map((b) => (
-              <div key={b.id} onClick={() => { router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); setIsBildirimAcik(false); }} className={`p-4 rounded-2xl border transition-all cursor-pointer bg-[#1a1c23] hover:border-orange-500/50 ${b.mesaj?.includes('DURDURULDU') ? 'border-red-900/50' : 'border-green-900/50'}`}>
+              <div key={b.id} onClick={() => { router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); setIsBildirimAcik(false); }} className={`p-4 rounded-2xl border transition-all cursor-pointer bg-[#1a1c23] hover:border-orange-500/50 ${b.mesaj?.includes('DURDU') ? 'border-red-900/50' : 'border-green-900/50'}`}>
                 <div className="flex justify-between items-start mb-2">
-                  <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white ${b.mesaj?.includes('DURDURULDU') ? 'bg-red-600' : 'bg-green-600'}`}>{b.mesaj?.includes('DURDURULDU') ? 'DURDU' : 'BİTTİ'}</span>
+                  <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white ${b.mesaj?.includes('DURDU') ? 'bg-red-600' : 'bg-green-600'}`}>{b.mesaj?.includes('DURDU') ? 'DURDU' : 'BİTTİ'}</span>
                   <span className="text-[8px] font-bold text-gray-600 italic">{new Date(b.created_at).toLocaleTimeString('tr-TR')}</span>
                 </div>
                 <p className="text-[11px] font-black italic uppercase leading-tight mb-2 text-gray-200">{b.mesaj}</p>
@@ -317,7 +339,6 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-
       {isBildirimAcik && <div onClick={() => setIsBildirimAcik(false)} className="fixed inset-0 bg-black/70 backdrop-blur-md z-[90]"></div>}
 
       <style jsx>{`
