@@ -39,7 +39,7 @@ export default function IhbarDetay() {
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
 
-  // --- 🛰️ ZIRHLI GPS YAKALAYICI (KİLİTLENMEYİ ÖNLER) ---
+  // --- 🛰️ GPS KOORDİNAT YAKALAYICI (ZORUNLU) ---
   const getGpsPosition = (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined' || !navigator.geolocation) return resolve(null);
@@ -47,9 +47,9 @@ export default function IhbarDetay() {
         (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         (err) => {
           console.warn("GPS Alınamadı:", err.message);
-          resolve(null); // Hata olsa da akışı bozma
+          resolve(null);
         },
-        { enableHighAccuracy: true, timeout: 3000, maximumAge: 0 } // 3 saniye bekle
+        { enableHighAccuracy: true, timeout: 3000, maximumAge: 0 }
       );
     });
   };
@@ -75,7 +75,7 @@ export default function IhbarDetay() {
       setUserMemberGroups(memberGroups?.map(g => g.grup_id) || []);
     }
     const [ihbarRes, pRes, gRes, mRes, kmRes, nRes] = await Promise.all([
-      supabase.from('ihbarlar').select(`*`).eq('id', id).single(),
+      supabase.from('ihbarlar').select(`*, profiles:atanan_personel(full_name), calisma_gruplari:atanan_grup_id(grup_adi)`).eq('id', id).single(),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
       supabase.from('calisma_gruplari').select('*').order('grup_adi'),
       supabase.from('malzemeler').select('*').order('malzeme_adi'),
@@ -104,10 +104,10 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
-  // --- 🚀 İŞE BAŞLA (GPS MÜHÜRLEMELİ) ---
+  // --- 🚀 İŞE BAŞLA (GPS ENTEGRELİ) ---
   const isiBaslat = async () => {
     setLoading(true);
-    const pos = await getGpsPosition(); // Başlangıç konumu al
+    const pos = await getGpsPosition();
 
     const { error } = await supabase.from('ihbarlar').update({ 
       durum: 'Calisiliyor', 
@@ -131,12 +131,11 @@ export default function IhbarDetay() {
     });
   };
 
-  // --- 🏁 İŞİ BİTİR / DURDUR (GPS MÜHÜRLEMELİ) ---
+  // --- 🏁 İŞİ BİTİR / DURDUR (GPS ENTEGRELİ) ---
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
     
-    // Sadece "Tamamlandi" ise bitiş konumu al
     const pos = stat === 'Tamamlandi' ? await getGpsPosition() : null;
 
     const { error: updateError } = await supabase.from('ihbarlar').update({ 
@@ -171,7 +170,14 @@ export default function IhbarDetay() {
       <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 w-full relative z-10">
         <div className="flex justify-between items-center bg-[#111318] p-5 rounded-2xl border border-gray-800 shadow-2xl">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl text-[10px]">← GERİ</button>
-          <div className="text-[10px] text-orange-500 tracking-widest">{ihbar.ifs_is_emri_no || 'IFS NO YOK'}</div>
+          <div className="text-[10px] flex items-center gap-4">
+             <span className="text-gray-500 italic">ATANAN:</span>
+             <span className="text-orange-500 font-black tracking-widest uppercase">
+                {ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZDA'}
+             </span>
+             <span className="text-gray-700">|</span>
+             <div className="text-blue-500 tracking-widest">{ihbar.ifs_is_emri_no || 'IFS NO YOK'}</div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 font-black italic uppercase">

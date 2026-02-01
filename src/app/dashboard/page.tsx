@@ -87,11 +87,11 @@ export default function DashboardPage() {
       // --- 🔍 FİLTRELEME MANTIĞI ---
       if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
         filtered = ihbarData.filter(i => {
+          const d = (i.durum || '').toLowerCase();
           const isAtanmis = (i.atanan_personel === id) || (grupIds.includes(i.atanan_grup_id));
-          const isVardiyaHavuzaDustu = (!isMesaiSaatleri && i.oncelik_durumu === 'VARDİYA_MODU' && i.durum === 'Beklemede' && i.atanan_personel === null && i.atanan_grup_id === null);
+          const isVardiyaHavuzaDustu = (!isMesaiSaatleri && i.oncelik_durumu === 'VARDİYA_MODU' && d.includes('beklemede') && i.atanan_personel === null && i.atanan_grup_id === null);
           
-          // ✅ Biten işlerde sadece kendi işini görsün
-          if ((i.durum || '').toLowerCase().includes('tamamlandi')) {
+          if (d.includes('tamamlandi')) {
             return i.atanan_personel === id;
           }
 
@@ -108,10 +108,10 @@ export default function DashboardPage() {
           i.atanan_grup_id === null
         ).length,
         tamamlanan: filtered.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).length,
-        islemde: filtered.filter(i => 
-          !(i.durum || '').toLowerCase().includes('tamamlandi') && 
-          (i.atanan_personel !== null || i.atanan_grup_id !== null || !(i.durum || '').toLowerCase().includes('beklemede'))
-        ).length
+        islemde: filtered.filter(i => {
+          const d = (i.durum || '').toLowerCase();
+          return !d.includes('tamamlandi') && (i.atanan_personel !== null || i.atanan_grup_id !== null || d.includes('calisiliyor') || d.includes('durduruldu'));
+        }).length
       })
     }
 
@@ -146,21 +146,10 @@ export default function DashboardPage() {
         channel = supabase.channel('dashboard-final-sync-v101')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (payload) => { 
             if (payload.eventType === 'INSERT') playNotificationSound();
-            if (payload.eventType === 'UPDATE') {
-                const old = payload.old;
-                const next = payload.new;
-                if (!old.atanan_personel && !old.atanan_grup_id && (next.atanan_personel || next.atanan_grup_id)) playNotificationSound();
-            }
             fetchData(currentRole, user.id); 
           })
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, (payload) => { 
-              const userR = currentRole.toUpperCase();
-              const targets = payload.new.hedef_roller || [];
-              const isMatch = targets.some((r: string) => r.toUpperCase() === userR || userR.includes(r.toUpperCase()));
-              if (isMatch) {
-                  playNotificationSound();
-                  fetchData(currentRole, user.id); 
-              }
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, () => { 
+             fetchData(currentRole, user.id); 
           })
           .subscribe()
       } else { router.push('/') }
@@ -168,7 +157,6 @@ export default function DashboardPage() {
     checkUser()
     const timer = setInterval(() => { 
       setNow(new Date()); 
-      if (userRole && userId) fetchData(userRole, userId); 
     }, 60000)
 
     return () => { 
@@ -181,14 +169,18 @@ export default function DashboardPage() {
 
   const JobCard = ({ ihbar }: { ihbar: any }) => {
     const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
-    const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && ihbar.durum === 'Beklemede';
+    const d = (ihbar.durum || '').toLowerCase();
+    const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && d.includes('beklemede');
+    const isDurduruldu = d.includes('durduruldu');
     const oneri = aiOneriGetir(`${ihbar.konu} ${ihbar.aciklama || ''}`);
     const atananIsmi = ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZ (ATANMADI)';
 
     return (
-      <div onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className={`p-4 rounded-2xl shadow-xl border mb-3 backdrop-blur-md transition-all active:scale-95 relative z-10 ${isVardiya ? 'bg-orange-600/20 border-orange-500 animate-pulse' : 'bg-[#1a1c23]/80 border-gray-700/50 hover:border-orange-500/50'}`}>
+      <div onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className={`p-4 rounded-2xl shadow-xl border mb-3 backdrop-blur-md transition-all active:scale-95 relative z-10 ${isDurduruldu ? 'bg-red-900/10 border-red-500/50' : isVardiya ? 'bg-orange-600/20 border-orange-500 animate-pulse' : 'bg-[#1a1c23]/80 border-gray-700/50 hover:border-orange-500/50'}`}>
         <div className="flex justify-between items-start mb-1 font-black">
-          <span className={`text-[10px] italic font-black tracking-widest uppercase ${isVardiya ? 'text-white' : 'text-orange-400'}`}>{isVardiya ? '🚨 VARDİYA İHBARI' : `#${ihbar.ifs_is_emri_no || 'IFS YOK'}`}</span>
+          <span className={`text-[10px] italic font-black tracking-widest uppercase ${isDurduruldu ? 'text-red-500' : isVardiya ? 'text-white' : 'text-orange-400'}`}>
+            {isDurduruldu ? '⚠️ DURDURULDU' : isVardiya ? '🚨 VARDİYA İHBARI' : `#${ihbar.ifs_is_emri_no || 'IFS YOK'}`}
+          </span>
           <span className="text-[9px] text-gray-500 font-bold font-black">{new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</span>
         </div>
         {oneri && (
@@ -203,8 +195,8 @@ export default function DashboardPage() {
         <div className="font-black text-[12px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.musteri_adi}</div>
         <div className="text-[10px] font-bold uppercase mb-3 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
         <div className="flex justify-between items-center text-[9px] font-black opacity-60 text-gray-300 font-black">
-           <span className={`uppercase ${ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi ? 'text-orange-500' : 'text-blue-400 animate-pulse'}`}>👤 {atananIsmi}</span>
-           <span className="flex items-center gap-1 font-black">⏱️ {Math.floor(diff)} DK</span>
+            <span className={`uppercase ${ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi ? 'text-orange-500' : 'text-blue-400 animate-pulse'}`}>👤 {atananIsmi}</span>
+            <span className="flex items-center gap-1 font-black">⏱️ {Math.floor(diff)} DK</span>
         </div>
       </div>
     )
@@ -253,7 +245,6 @@ export default function DashboardPage() {
           )}
         </nav>
 
-        {/* 👤 Kullanıcı & Grup Bölümü */}
         <div className="p-4 bg-black/40 border-t border-gray-800/50">
           <div className="flex flex-col mb-3 px-2">
             <span className="text-[11px] font-black uppercase italic text-orange-500 truncate">{userName}</span>
@@ -261,7 +252,7 @@ export default function DashboardPage() {
             {userGroups.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1">
                 {userGroups.map((grup, idx) => (
-                  <span key={idx} className="bg-blue-600/10 border border-blue-500/30 text-blue-400 text-[7px] px-2 py-0.5 rounded-full font-black uppercase italic">
+                  <span key={idx} className="bg-blue-600/10 border border-blue-500/30 text-blue-400 text-[7px] px-2 py-0.5 rounded-full font-black uppercase italic mt-1 w-fit">
                     Atölye: {grup}
                   </span>
                 ))}
@@ -292,13 +283,13 @@ export default function DashboardPage() {
 
           <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-blue-500/10 h-[750px] shadow-inner">
             <h3 className="text-[10px] font-black uppercase italic mb-6 text-blue-400 flex items-center gap-2 tracking-[0.2em]">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> İşlemde ({stats.islemde})
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> İşlemde / Duran ({stats.islemde})
             </h3>
             <div className="overflow-y-auto flex-1 custom-scrollbar pr-2">
-              {ihbarlar.filter(i => 
-                !(i.durum || '').toLowerCase().includes('tamamlandi') && 
-                (i.atanan_personel !== null || i.atanan_grup_id !== null || !(i.durum || '').toLowerCase().includes('beklemede'))
-              ).map(i => <JobCard key={i.id} ihbar={i} />)}
+              {ihbarlar.filter(i => {
+                const d = (i.durum || '').toLowerCase();
+                return !d.includes('tamamlandi') && (i.atanan_personel !== null || i.atanan_grup_id !== null || d.includes('calisiliyor') || d.includes('durduruldu'));
+              }).map(i => <JobCard key={i.id} ihbar={i} />)}
             </div>
           </div>
 
@@ -313,7 +304,7 @@ export default function DashboardPage() {
         </div>
       </div>
       
-      {/* ... Diğer UI elemanları (Bildirim çekmecesi vb.) aynı ... */}
+      {/* BİLDİRİM ÇEKMECESİ */}
       <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-[#111318] shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-[100] transform transition-transform duration-500 ease-out p-6 flex flex-col border-l border-orange-500/20 ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex justify-between items-center mb-8">
           <h3 className="text-xl font-black italic uppercase text-orange-500 tracking-tighter">Bildirimler ({bildirimSayisi})</h3>
@@ -339,6 +330,7 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
       {isBildirimAcik && <div onClick={() => setIsBildirimAcik(false)} className="fixed inset-0 bg-black/70 backdrop-blur-md z-[90]"></div>}
 
       <style jsx>{`
