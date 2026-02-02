@@ -1,33 +1,54 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx' // Excel kütüphanesi
+import * as XLSX from 'xlsx'
 
 export default function MalzemeYonetimi() {
   const [liste, setListe] = useState<any[]>([])
   const [yukleniyor, setYukleniyor] = useState(false)
+  const [aramaTerimi, setAramaTerimi] = useState('')
+  const [sayfa, setSayfa] = useState(1)
+  const sayfaBasiAdet = 100 // Her sayfada 100 malzeme
   const router = useRouter()
 
   const fetchMalzemeler = async () => {
+    setYukleniyor(true);
     const { data } = await supabase.from('malzemeler').select('*').order('malzeme_kodu', { ascending: true })
     setListe(data || [])
+    setYukleniyor(false);
   }
 
   useEffect(() => { fetchMalzemeler() }, [])
 
-  // EXCEL OKUMA FONKSİYONU (Orijinal Mantık Korundu)
+  // Canlı Arama ve Filtreleme Mantığı
+  const filtrelenmisListe = useMemo(() => {
+    const terim = aramaTerimi.toLowerCase();
+    return liste.filter(m => 
+      m.malzeme_kodu?.toLowerCase().includes(terim) || 
+      m.malzeme_adi?.toLowerCase().includes(terim)
+    );
+  }, [aramaTerimi, liste]);
+
+  // Sayfalama Hesaplamaları
+  const toplamSayfa = Math.ceil(filtrelenmisListe.length / sayfaBasiAdet);
+  const suankiVeriler = filtrelenmisListe.slice((sayfa - 1) * sayfaBasiAdet, sayfa * sayfaBasiAdet);
+
+  const malzemeSil = async (id: string) => {
+    if (!confirm("Bu malzemeyi katalogdan silmek istediğinize emin misiniz?")) return;
+    const { error } = await supabase.from('malzemeler').delete().eq('id', id);
+    if (error) alert(error.message); else fetchMalzemeler();
+  }
+
   const handleFileUpload = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-
     reader.onload = async (evt) => {
       setYukleniyor(true);
       const bstr = evt.target?.result;
       const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
+      const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws);
 
       const formatliVeri = data.map((item: any) => ({
@@ -36,120 +57,95 @@ export default function MalzemeYonetimi() {
       })).filter(i => i.malzeme_kodu && i.malzeme_adi);
 
       const { error } = await supabase.from('malzemeler').upsert(formatliVeri, { onConflict: 'malzeme_kodu' });
-
-      if (error) {
-        alert("Hata: " + error.message);
-      } else {
-        alert(`${formatliVeri.length} adet malzeme başarıyla güncellendi/eklendi.`);
-        fetchMalzemeler();
-      }
+      if (error) alert("Hata: " + error.message);
+      else { alert(`${formatliVeri.length} adet malzeme güncellendi.`); fetchMalzemeler(); }
       setYukleniyor(false);
     };
     reader.readAsBinaryString(file);
   };
 
   return (
-    <div className="min-h-screen flex flex-col text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
+    <div className="h-screen flex flex-col text-white font-sans bg-[#0a0b0e] overflow-hidden">
       
-      {/* 🖼️ TAM SAYFA KURUMSAL ARKA PLAN */}
-      <div 
-        className="fixed inset-0 z-0 opacity-20 pointer-events-none"
-        style={{
-          backgroundImage: "url('/logo.png')",
-          backgroundSize: '80%',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          filter: 'brightness(0.5) contrast(1.2) grayscale(0.5)'
-        }}
-      ></div>
-
-      <div className="p-4 md:p-8 max-w-7xl mx-auto w-full relative z-10 space-y-6">
-        
-        {/* 🏛️ ÜST BAR */}
-        <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-5 rounded-3xl border border-gray-800 shadow-2xl">
+      {/* 🏛️ ÜST BAR (SABİT) */}
+      <div className="p-4 md:p-6 bg-[#111318]/90 backdrop-blur-md border-b border-gray-800 z-50">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none drop-shadow-[0_0_10px_rgba(249,115,22,0.3)]">Malzeme Kataloğu</h1>
-            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] mt-1 italic">IFS Veri Entegrasyon Paneli</p>
+            <h1 className="text-xl font-black uppercase italic tracking-tighter text-orange-500 leading-none">Malzeme Envanteri</h1>
+            <p className="text-[10px] font-bold text-gray-500 uppercase mt-1">Toplam: {filtrelenmisListe.length} Kalem</p>
           </div>
-          <button 
-            onClick={() => router.push('/dashboard')} 
-            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95 shadow-orange-900/30 font-black"
-          >
-            <span className="text-sm">←</span> GERİ DÖN
-          </button>
+          <button onClick={() => router.push('/dashboard')} className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-xl text-[10px] font-black uppercase italic">← GERİ</button>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 gap-6">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 relative custom-scrollbar">
+        <div className="max-w-7xl mx-auto space-y-4">
           
-          {/* EXCEL YÜKLEME ALANI (GÖRSEL GÜNCELLEME) */}
-          <div className="bg-[#1a1c23]/90 backdrop-blur-lg p-6 rounded-[2.5rem] border border-gray-800 shadow-2xl flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-4">
-               <div className="w-12 h-12 bg-green-600/20 rounded-2xl flex items-center justify-center text-2xl shadow-lg border border-green-600/30 text-green-500">📊</div>
-               <div>
-                  <h3 className="text-sm font-black uppercase italic text-white leading-none mb-1 tracking-widest">Excel Veri Aktarımı</h3>
-                  <p className="text-[9px] font-bold text-gray-500 uppercase italic">Katalog sütunları: "Kod" ve "Ad" olmalıdır.</p>
-               </div>
-            </div>
-            
-            <div className="flex items-center gap-4 bg-black/40 p-3 rounded-2xl border border-gray-700 w-full md:w-auto">
+          {/* 🔍 ARAMA VE YÜKLEME PANELI (SABİT DURUŞLU) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-[#1a1c23] p-4 rounded-3xl border border-gray-800 flex items-center gap-4">
+              <span className="text-xl">🔍</span>
               <input 
-                type="file" 
-                accept=".xlsx, .xls" 
-                onChange={handleFileUpload}
-                className="text-[10px] font-black uppercase italic file:mr-4 file:py-2 file:px-6 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:uppercase file:bg-orange-600 file:text-white hover:file:bg-orange-700 transition-all cursor-pointer"
+                type="text" 
+                placeholder="KOD VEYA AD İLE ARA..." 
+                className="bg-transparent border-none outline-none w-full font-black italic uppercase text-sm"
+                value={aramaTerimi}
+                onChange={(e) => { setAramaTerimi(e.target.value); setSayfa(1); }}
               />
-              {yukleniyor && (
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-orange-500 rounded-full animate-ping"></span>
-                  <span className="text-orange-500 font-black text-[10px] uppercase italic">İşleniyor...</span>
-                </div>
-              )}
+            </div>
+            <div className="bg-[#1a1c23] p-4 rounded-3xl border border-gray-800 flex items-center justify-between gap-4">
+                <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="text-[10px] font-black italic file:bg-orange-600 file:border-none file:px-4 file:py-2 file:rounded-xl file:text-white cursor-pointer" />
+                {yukleniyor && <span className="animate-pulse text-orange-500 font-black text-[10px]">İŞLENİYOR...</span>}
             </div>
           </div>
 
-          {/* LİSTE TABLOSU */}
-          <div className="bg-[#1a1c23]/80 backdrop-blur-lg rounded-[2.5rem] border border-gray-800 overflow-hidden shadow-2xl">
-            <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full text-left font-black">
-                <thead>
-                  <tr className="bg-black/40 text-[9px] font-black uppercase text-gray-500 tracking-[0.2em] italic border-b border-gray-800">
-                    <th className="p-6">IFS MALZEME KODU</th>
-                    <th className="p-6">MALZEME TANIMI (AÇIKLAMA)</th>
+          {/* 📊 TABLO ALANI */}
+          <div className="bg-[#1a1c23] rounded-[2.5rem] border border-gray-800 overflow-hidden shadow-2xl mb-20">
+            <table className="w-full text-left">
+              <thead className="sticky top-0 bg-[#1a1c23] z-10 border-b border-gray-800">
+                <tr className="text-[10px] font-black uppercase text-gray-500 italic">
+                  <th className="p-5">MALZEME KODU</th>
+                  <th className="p-5">MALZEME TANIMI</th>
+                  <th className="p-5 text-right">İŞLEM</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800/50">
+                {suankiVeriler.map((m) => (
+                  <tr key={m.id} className="hover:bg-white/5 transition-all group font-black italic uppercase">
+                    <td className="p-5 text-orange-500 text-sm">{m.malzeme_kodu}</td>
+                    <td className="p-5 text-gray-300 text-sm">{m.malzeme_adi}</td>
+                    <td className="p-5 text-right">
+                      <button onClick={() => malzemeSil(m.id)} className="text-red-500 bg-red-500/10 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-xl text-[9px] transition-all">SİL</button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800/50">
-                  {liste.length === 0 ? (
-                    <tr>
-                      <td colSpan={2} className="p-20 text-center text-gray-600 font-black uppercase italic tracking-widest opacity-20 text-xl">
-                        Katalog Boş
-                      </td>
-                    </tr>
-                  ) : (
-                    liste.map((m) => (
-                      <tr key={m.id} className="hover:bg-white/5 transition-all">
-                        <td className="p-6">
-                          <span className="font-mono font-black text-sm text-orange-500 tracking-tighter bg-orange-500/10 px-4 py-2 rounded-xl border border-orange-500/20">
-                            {m.malzeme_kodu}
-                          </span>
-                        </td>
-                        <td className="p-6">
-                          <div className="text-sm font-black text-gray-200 uppercase italic tracking-tight leading-tight">
-                            {m.malzeme_adi}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-      
+
+      {/* 📑 SAYFALAMA (PAGINATION) ALT BAR */}
+      <div className="fixed bottom-0 left-0 right-0 bg-[#111318]/95 backdrop-blur-md p-4 border-t border-gray-800 flex justify-center items-center gap-4 z-[100]">
+        <button 
+          disabled={sayfa === 1}
+          onClick={() => setSayfa(s => s - 1)}
+          className="bg-gray-800 disabled:opacity-20 px-4 py-2 rounded-xl text-[10px] font-black italic uppercase"
+        >Önceki</button>
+        
+        <span className="text-[10px] font-black italic uppercase text-orange-500">
+          SAYFA {sayfa} / {toplamSayfa || 1}
+        </span>
+
+        <button 
+          disabled={sayfa === toplamSayfa || toplamSayfa === 0}
+          onClick={() => setSayfa(s => s + 1)}
+          className="bg-gray-800 disabled:opacity-20 px-4 py-2 rounded-xl text-[10px] font-black italic uppercase"
+        >Sonraki</button>
+      </div>
+
       <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { height: 4px; width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
       `}</style>
     </div>
