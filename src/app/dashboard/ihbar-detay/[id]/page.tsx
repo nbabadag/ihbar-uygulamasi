@@ -39,7 +39,7 @@ export default function IhbarDetay() {
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
 
-  // --- 🛰️ GPS KOORDİNAT YAKALAYICI (ZORUNLU) ---
+  // --- 🛰️ GPS KOORDİNAT YAKALAYICI ---
   const getGpsPosition = (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined' || !navigator.geolocation) return resolve(null);
@@ -83,13 +83,24 @@ export default function IhbarDetay() {
       supabase.from('teknik_nesneler').select('*').order('nesne_adi')
     ])
     if (ihbarRes.data) {
-      setIhbar(ihbarRes.data); setEditKonu(ihbarRes.data.konu || ''); setEditAciklama(ihbarRes.data.aciklama || ''); setIfsNo(ihbarRes.data.ifs_is_emri_no || ''); setSeciliAtanan(ihbarRes.data.atanan_personel || ''); setSeciliGrup(ihbarRes.data.atanan_grup_id || ''); setPersonelNotu(ihbarRes.data.personel_notu || '');
+      setIhbar(ihbarRes.data); 
+      setEditKonu(ihbarRes.data.konu || ''); 
+      setEditAciklama(ihbarRes.data.aciklama || ''); 
+      setIfsNo(ihbarRes.data.ifs_is_emri_no || ''); 
+      setSeciliAtanan(ihbarRes.data.atanan_personel || ''); 
+      setSeciliGrup(ihbarRes.data.atanan_grup_id || ''); 
+      setPersonelNotu(ihbarRes.data.personel_notu || '');
+      
       if (ihbarRes.data.secilen_nesne_adi && nRes.data) {
         const bul = nRes.data.find(n => n.nesne_adi === ihbarRes.data.secilen_nesne_adi);
         setSecilenNesne(bul || { nesne_adi: ihbarRes.data.secilen_nesne_adi, ifs_kod: 'KODSUZ' });
       }
     }
-    setPersoneller(pRes.data?.filter(p => !p.role.toUpperCase().includes('ÇAĞRI')) || []); setGruplar(gRes.data || []); setMalzemeKatalog(mRes.data || []); setKullanilanlar(kmRes.data || []); setNesneListesi(nRes.data || []);
+    setPersoneller(pRes.data?.filter(p => !p.role.toUpperCase().includes('ÇAĞRI')) || []); 
+    setGruplar(gRes.data || []); 
+    setMalzemeKatalog(mRes.data || []); 
+    setKullanilanlar(kmRes.data || []); 
+    setNesneListesi(nRes.data || []);
   }, [id])
 
   useEffect(() => { fetchData() }, [fetchData])
@@ -104,11 +115,9 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
-  // --- 🚀 İŞE BAŞLA (GPS ENTEGRELİ) ---
   const isiBaslat = async () => {
     setLoading(true);
     const pos = await getGpsPosition();
-
     const { error } = await supabase.from('ihbarlar').update({ 
       durum: 'Calisiliyor', 
       kabul_tarihi: new Date().toISOString(), 
@@ -116,7 +125,6 @@ export default function IhbarDetay() {
       enlem: pos?.lat || null, 
       boylam: pos?.lng || null
     }).eq('id', id);
-
     if (error) alert(error.message); else fetchData();
     setLoading(false);
   }
@@ -131,13 +139,10 @@ export default function IhbarDetay() {
     });
   };
 
-  // --- 🏁 İŞİ BİTİR / DURDUR (GPS ENTEGRELİ) ---
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
-    
     const pos = stat === 'Tamamlandi' ? await getGpsPosition() : null;
-
     const { error: updateError } = await supabase.from('ihbarlar').update({ 
       durum: stat, 
       personel_notu: personelNotu, 
@@ -168,6 +173,8 @@ export default function IhbarDetay() {
   return (
     <div className="min-h-screen flex flex-col text-white font-sans bg-[#0a0b0e] font-black uppercase italic">
       <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 w-full relative z-10">
+        
+        {/* ÜST BAR */}
         <div className="flex justify-between items-center bg-[#111318] p-5 rounded-2xl border border-gray-800 shadow-2xl">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl text-[10px]">← GERİ</button>
           <div className="text-[10px] flex items-center gap-4">
@@ -184,6 +191,30 @@ export default function IhbarDetay() {
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-[#1a1c23] p-8 rounded-[3rem] border border-gray-800 shadow-2xl">
               <h1 className="text-4xl mb-4 tracking-tighter">{ihbar.musteri_adi}</h1>
+
+              {/* 📞 HIZLI ARAMA BUTONU (MOBİL ÖNCELİKLİ) */}
+              {ihbar.tel_no && (ihbar.durum === 'Calisiliyor' || ihbar.durum === 'İşlemde') && (
+                <div className="w-full mb-8">
+                  <a 
+                    href={`tel:${ihbar.tel_no}`} 
+                    className="flex items-center justify-between bg-gradient-to-r from-green-600 to-green-500 p-6 rounded-[2rem] shadow-2xl active:scale-95 transition-all border-b-8 border-green-800"
+                  >
+                    <div className="flex items-center gap-5">
+                      <div className="bg-white/20 p-4 rounded-full animate-bounce">
+                        <span className="text-3xl">📞</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-white/70 uppercase tracking-[0.2em] italic">İHBAR YAPANIK ARA</span>
+                        <span className="text-2xl font-black tracking-tighter text-white">{ihbar.tel_no}</span>
+                      </div>
+                    </div>
+                    <div className="bg-white/10 px-6 py-3 rounded-2xl border border-white/20">
+                      <span className="text-xs font-black text-white uppercase italic">ARAMA YAP</span>
+                    </div>
+                  </a>
+                </div>
+              )}
+
               <div className="mb-6">{canEditIhbar ? ( <input className="w-full bg-black/50 border border-orange-500/30 p-4 rounded-2xl text-lg text-blue-400 outline-none" value={editKonu} onChange={e => setEditKonu(e.target.value)} /> ) : ( <p className="text-lg text-blue-400">{ihbar.konu}</p> )}</div>
               <div className="bg-black/30 p-6 rounded-3xl mb-8 border border-gray-800/50 italic">{canEditIhbar ? ( <textarea className="w-full bg-transparent border-none text-gray-300 text-sm outline-none resize-none" rows={3} value={editAciklama} onChange={e => setEditAciklama(e.target.value)} /> ) : ( <p className="text-gray-300 text-sm font-black italic">"{ihbar.aciklama}"</p> )}</div>
               
@@ -273,6 +304,9 @@ export default function IhbarDetay() {
           </div>
         </div>
       </div>
+      <style jsx>{`
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+      `}</style>
     </div>
   )
 }
