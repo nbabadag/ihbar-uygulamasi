@@ -12,14 +12,16 @@ export default function DashboardPage() {
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
-  const [userGroups, setUserGroups] = useState<string[]>([]) // 👥 Atölye isimleri için state
+  const [userGroups, setUserGroups] = useState<string[]>([])
   const [now, setNow] = useState(new Date())
   
   const [bildirimSayisi, setBildirimSayisi] = useState(0)
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [isBildirimAcik, setIsBildirimAcik] = useState(false)
+  
+  // --- 🟢 ONLINE PERSONEL STATE ---
+  const [onlineUsers, setOnlineUsers] = useState<any[]>([])
 
-  // --- 🔔 SESLİ BİLDİRİM FONKSİYONU ---
   const playNotificationSound = useCallback(() => {
     const audio = new Audio('/notification.mp3');
     audio.play().catch(() => {
@@ -27,14 +29,13 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // --- YETKİ KONTROLLERİ ---
   const normalizedRole = userRole?.trim().toUpperCase() || '';
   const isAdmin = normalizedRole.includes('ADMIN');
   const isMudur = normalizedRole.includes('MÜDÜR') || normalizedRole.includes('MUDUR');
   const isMuhendis = normalizedRole.includes('MÜH') || normalizedRole.includes('MUH');
   const isCagri = normalizedRole.includes('ÇAĞRI') || normalizedRole.includes('CAGRI');
   const isFormen = normalizedRole.includes('FORMEN');
-  const isSahaPersoneli = normalizedRole === 'SAHA PERSONELI'; // 👈 Saha Personeli kontrolü
+  const isSahaPersoneli = normalizedRole === 'SAHA PERSONELI';
 
   const canManageUsers = isAdmin || isMudur || isMuhendis;
   const canCreateJob = canManageUsers || isFormen || isCagri;
@@ -42,7 +43,7 @@ export default function DashboardPage() {
   const canSeeTV = canCreateJob;
   const canManageGroups = canManageUsers || isFormen;
   const canManageMaterials = canManageUsers || isFormen;
-  const canSeeMap = !isSahaPersoneli; // 👈 Saha personeli haritayı görmesin
+  const canSeeMap = !isSahaPersoneli;
 
   const aiOneriGetir = (konu: string) => {
     if (!konu || aiKombinasyonlar.length === 0) return null;
@@ -58,7 +59,6 @@ export default function DashboardPage() {
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
-    // --- 👥 GRUP BİLGİSİNİ ÇEKME ---
     const { data: userGroupData } = await supabase
       .from('grup_uyeleri')
       .select('grup_id, calisma_gruplari(grup_adi)')
@@ -84,7 +84,6 @@ export default function DashboardPage() {
 
       let filtered = ihbarData;
 
-      // --- 🔍 FİLTRELEME MANTIĞI ---
       if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
         filtered = ihbarData.filter(i => {
           const d = (i.durum || '').toLowerCase();
@@ -133,18 +132,48 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let channel: any;
+    let presenceChannel: any; // 🟢 Online takibi için
+
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setUserId(user.id)
         const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
         const currentRole = profile?.role || 'Saha Personeli';
-        setUserName(profile?.full_name || 'Kullanıcı')
+        const currentName = profile?.full_name || 'Kullanıcı';
+        setUserName(currentName)
         setUserRole(currentRole)
         fetchData(currentRole, user.id)
         
+        // --- 🟢 ONLINE PERSONEL TAKİBİ (PRESENCE) ---
+        presenceChannel = supabase.channel('online-sync', {
+            config: { presence: { key: 'user' } }
+        })
+
+        presenceChannel
+            .on('presence', { event: 'sync' }, () => {
+                const state = presenceChannel.presenceState();
+                const users = Object.values(state).flat().map((p: any) => ({
+                    id: p.id,
+                    name: p.name,
+                    role: p.role
+                }));
+                // Aynı ID'ye sahip olanları teke indir (Duplicate engelleme)
+                const uniqueUsers = Array.from(new Map(users.map((u:any) => [u.id, u])).values());
+                setOnlineUsers(uniqueUsers);
+            })
+            .subscribe(async (status: string) => {
+                if (status === 'SUBSCRIBED') {
+                    await presenceChannel.track({
+                        id: user.id,
+                        name: currentName,
+                        role: currentRole
+                    });
+                }
+            });
+
         channel = supabase.channel('dashboard-final-sync-v101')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (payload) => { 
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (payload: any) => { 
             if (payload.eventType === 'INSERT') playNotificationSound();
             fetchData(currentRole, user.id); 
           })
@@ -162,8 +191,9 @@ export default function DashboardPage() {
     return () => { 
       clearInterval(timer); 
       if (channel) supabase.removeChannel(channel); 
+      if (presenceChannel) supabase.removeChannel(presenceChannel);
     }
-  }, [router, fetchData, userRole, userId, playNotificationSound])
+  }, [router, fetchData, playNotificationSound])
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/'); }
 
@@ -244,6 +274,22 @@ export default function DashboardPage() {
             </>
           )}
         </nav>
+
+        {/* 🟢 ONLINE PERSONEL PANELİ (YENİ) */}
+        <div className="px-4 py-2 border-t border-gray-800/50 bg-black/20">
+            <h4 className="text-[8px] font-black text-green-500 uppercase italic mb-2 tracking-[0.2em] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                AKTİF PERSONEL ({onlineUsers.length})
+            </h4>
+            <div className="max-h-24 overflow-y-auto custom-scrollbar flex flex-col gap-1">
+                {onlineUsers.map((user, idx) => (
+                    <div key={idx} className="flex flex-col bg-white/5 p-1.5 rounded-lg border border-white/5">
+                        <span className="text-[9px] font-black uppercase italic text-gray-300 truncate">{user.name}</span>
+                        <span className="text-[7px] font-bold text-gray-600 uppercase italic truncate">{user.role}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
 
         <div className="p-4 bg-black/40 border-t border-gray-800/50">
           <div className="flex flex-col mb-3 px-2">
