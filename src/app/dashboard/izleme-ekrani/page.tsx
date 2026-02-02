@@ -181,7 +181,7 @@ export default function TVIzlemePage() {
       
       {/* HEADER */}
       <div className="flex justify-between items-center mb-3 bg-blue-700 p-4 rounded-[1.5rem] shadow-2xl border-b-4 border-blue-900">
-        <h1 className="text-xl font-black italic tracking-tighter uppercase leading-none">SAHA 360 / CANLI İZLEME PANELİ</h1>
+        <h1 className="text-xl font-black italic tracking-tighter uppercase leading-none">Saha 360 // CANLI İZLEME PANELİ</h1>
         <div className="text-right flex items-center gap-6">
           <div className="text-xs font-bold opacity-70 uppercase tabular-nums">
             {now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} | {now.toLocaleTimeString('tr-TR')}
@@ -195,7 +195,7 @@ export default function TVIzlemePage() {
         {/* 1. SÜTUN: AÇIK İHBARLAR */}
         <div className="flex flex-col bg-yellow-400/5 rounded-[2rem] border-2 border-yellow-400/20 overflow-hidden">
           <div className="p-3 bg-yellow-400 text-yellow-900 flex justify-between items-center">
-            <h2 className="text-xs font-black uppercase italic tracking-tighter">🟡 AÇIK İHBARLAR</h2>
+            <h2 className="text-xs font-black uppercase italic tracking-tighter">🟡 Havuzda Bekleyen İhbarlar</h2>
             <span className="text-lg font-black">{ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('beklemede')).length}</span>
           </div>
           <div ref={scrollRef1} className="flex-1 overflow-y-auto p-2 scrollbar-hide">
@@ -206,7 +206,7 @@ export default function TVIzlemePage() {
         {/* 2. SÜTUN: İŞLEMDE OLANLAR / DURDURULANLAR */}
         <div className="flex flex-col bg-blue-500/5 rounded-[2rem] border-2 border-blue-500/20 overflow-hidden">
           <div className="p-3 bg-blue-600 text-white flex justify-between items-center">
-            <h2 className="text-xs font-black uppercase italic tracking-tighter">🔵 İŞLEMDE / DURAN</h2>
+            <h2 className="text-xs font-black uppercase italic tracking-tighter">🔵 İşlemde / Durdurulan İhbarlar</h2>
             <span className="text-lg font-black">
                 {ihbarlar.filter(i => {
                     const d = (i.durum || '').toLowerCase();
@@ -225,7 +225,7 @@ export default function TVIzlemePage() {
         {/* 3. SÜTUN: SON TAMAMLANANLAR */}
         <div className="flex flex-col bg-green-500/5 rounded-[2rem] border-2 border-green-500/20 overflow-hidden">
           <div className="p-3 bg-green-600 text-white flex justify-between items-center">
-            <h2 className="text-xs font-black uppercase italic tracking-tighter">🟢 SON TAMAMLANAN</h2>
+            <h2 className="text-xs font-black uppercase italic tracking-tighter">🟢 Tamanlanan Son İhbarlar</h2>
             <span className="text-lg font-black">{ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).length}</span>
           </div>
           <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
@@ -236,7 +236,7 @@ export default function TVIzlemePage() {
         {/* 4. SÜTUN: İSTATİSTİKLER */}
         <div className="flex flex-col gap-3">
           <div className="flex-1 flex flex-col bg-slate-800 rounded-[2rem] border-2 border-slate-700 p-4 shadow-xl">
-            <h2 className="text-[10px] font-black text-blue-400 uppercase italic tracking-widest text-center mb-3">📊 BUGÜN</h2>
+            <h2 className="text-[10px] font-black text-blue-400 uppercase italic tracking-widest text-center mb-3">📊 GÜNÜN ÖZETİ</h2>
             <div className="grid grid-cols-2 gap-2 flex-1">
               <StatSquare label="TOPLAM" value={todayStats.toplam} colorClass="text-white" />
               <StatSquare label="BEKLEYEN" value={todayStats.bekleyen} colorClass="text-yellow-400" />
@@ -246,7 +246,7 @@ export default function TVIzlemePage() {
           </div>
 
           <div className="flex-1 flex flex-col bg-slate-900 rounded-[2rem] border-2 border-slate-800 p-4 shadow-xl">
-            <h2 className="text-[10px] font-black text-orange-400 uppercase italic tracking-widest text-center mb-3">📅 HAFTALIK</h2>
+            <h2 className="text-[10px] font-black text-orange-400 uppercase italic tracking-widest text-center mb-3">📅 HAFTANIN ÖZETİ</h2>
             <div className="grid grid-cols-2 gap-2 flex-1">
               <StatSquare label="TOPLAM" value={weekStats.toplam} colorClass="text-white" />
               <StatSquare label="BEKLEYEN" value={weekStats.bekleyen} colorClass="text-yellow-400" />

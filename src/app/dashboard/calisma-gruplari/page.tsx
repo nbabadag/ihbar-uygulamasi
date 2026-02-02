@@ -128,8 +128,8 @@ export default function CalismaGruplariPage() {
         {/* 🏛️ ÜST BAR */}
         <div className="flex justify-between items-center bg-[#111318]/90 backdrop-blur-md p-6 rounded-3xl border border-gray-800 shadow-2xl">
           <div>
-            <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none">Ekip Yönetimi</h1>
-            <p className="text-[9px] font-bold text-orange-500 uppercase tracking-[0.3em] mt-1 italic">Sefine Shipyard // Kayıt Kontrol</p>
+            <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none">Saha 360 // Ekip Yönetimi</h1>
+            <p className="text-[9px] font-bold text-orange-500 uppercase tracking-[0.3em] mt-1 italic">Çalışma Grupları Kontrol Merkezi</p>
           </div>
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2.5 rounded-2xl font-black text-[10px] uppercase italic transition-all shadow-lg active:scale-95">← GERİ DÖN</button>
         </div>

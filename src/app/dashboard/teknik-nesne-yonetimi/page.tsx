@@ -104,8 +104,8 @@ export default function TeknikNesneYonetimi() {
       <div className="max-w-7xl mx-auto relative z-10">
         <div className="flex justify-between items-center mb-8 bg-[#111318]/90 backdrop-blur-md p-6 rounded-3xl border border-gray-800 shadow-2xl">
           <div>
-            <h1 className="text-2xl text-orange-500 tracking-tighter">Teknik Nesne Yönetimi</h1>
-            <p className="text-[9px] text-gray-500 mt-1 uppercase tracking-widest">Envanter Düzenleme ve Kontrol</p>
+            <h1 className="text-2xl text-orange-500 tracking-tighter">SAHA 360 // Teknik Nesne Yönetimi</h1>
+            <p className="text-[9px] text-gray-500 mt-1 uppercase tracking-widest">Envanter Düzenleme ve Kontrol MERKEZİ</p>
           </div>
           <button onClick={() => router.push('/dashboard')} className="bg-gray-800 hover:bg-orange-600 px-6 py-3 rounded-2xl text-[10px] transition-all">← GERİ</button>
         </div>
@@ -136,7 +136,7 @@ export default function TeknikNesneYonetimi() {
                 <tr>
                   <th className="p-5">NESNE TANIMI</th>
                   <th className="p-5">IFS KODU</th>
-                  <th className="p-5 text-right tracking-widest">İŞLEMLER</th>
+                  <th className="p-5 text-right tracking-widest">Düzenle / Sil</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">

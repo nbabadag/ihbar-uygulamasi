@@ -95,7 +95,7 @@ export default function MalzemeYonetimi() {
       <div className="relative z-50 bg-[#111318]/95 backdrop-blur-xl border-b border-gray-800 p-4 md:p-6 shadow-2xl">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex flex-col items-center md:items-start">
-            <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter">Malzeme Kataloğu</h1>
+            <h1 className="text-2xl font-black text-white uppercase italic tracking-tighter">Saha 360 // Malzeme Kataloğu</h1>
             <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mt-1">
               TOPLAM: {liste.length} | FİLTRELENEN: {filtrelenmisListe.length}
             </p>

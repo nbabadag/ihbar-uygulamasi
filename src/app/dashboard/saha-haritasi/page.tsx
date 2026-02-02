@@ -80,14 +80,14 @@ export default function SahaHaritasi() {
         <div className="flex items-center gap-4">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-4 py-2 rounded-xl text-[10px]">← GERİ</button>
           <div>
-            <h1 className="text-sm tracking-tighter">SAHA 360 // OPERASYON</h1>
-            <p className="text-[8px] text-blue-400">Canlı Rota İzleme Sistemi</p>
+            <h1 className="text-sm tracking-tighter">SAHA 360 // OPERASYON MERKEZİ</h1>
+            <p className="text-[8px] text-blue-400">CANLI / KAYITLI İzleme Sistemi</p>
           </div>
         </div>
 
         <div className="flex bg-black/40 p-1 rounded-2xl border border-white/5">
-          <button onClick={() => setFiltre('aktif')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'aktif' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>🛰️ AKTİF TAKİP</button>
-          <button onClick={() => setFiltre('tamamlandi')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'tamamlandi' ? 'bg-green-600 text-white' : 'text-gray-500'}`}>🏁 ROTA ANALİZİ</button>
+          <button onClick={() => setFiltre('aktif')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'aktif' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>🛰️ İŞLEMDE / DURDURULAN</button>
+          <button onClick={() => setFiltre('tamamlandi')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'tamamlandi' ? 'bg-green-600 text-white' : 'text-gray-500'}`}>🏁 TAMAMLANAN</button>
         </div>
       </div>
 
@@ -116,7 +116,7 @@ export default function SahaHaritasi() {
                       onClick={() => haritayiGuncelle(is)} 
                       className={`w-full py-3 rounded-2xl text-[10px] text-white shadow-lg transition-all ${filtre === 'aktif' ? 'bg-blue-600' : 'bg-green-600'}`}
                     >
-                      {filtre === 'aktif' ? '📍 KONUMU GÖSTER' : '🗺️ ROTAYI ÇİZ'}
+                      {filtre === 'aktif' ? '📍 KONUMU GÖR' : '🗺️ KONUMU GÖR'}
                     </button>
                   ) : (
                     <div className="text-[8px] text-red-500/70 italic text-center py-2 border border-red-500/10 rounded-xl">Konum Verisi Yok</div>

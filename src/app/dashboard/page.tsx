@@ -82,9 +82,11 @@ export default function DashboardPage() {
       const toplamDakika = turkiyeZamani.getHours() * 60 + turkiyeZamani.getMinutes();
       const isMesaiSaatleri = toplamDakika >= 481 && toplamDakika <= 1004;
 
+      // 🛡️ KRİTİK DÜZELTME: Saha Personeli haricindekiler filtreye takılmaz.
       let filtered = ihbarData;
+      const roleUpper = role.trim().toUpperCase();
 
-      if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
+      if (roleUpper === 'SAHA PERSONELI') {
         filtered = ihbarData.filter(i => {
           const d = (i.durum || '').toLowerCase();
           const isAtanmis = (i.atanan_personel === id) || (grupIds.includes(i.atanan_grup_id));
@@ -115,14 +117,14 @@ export default function DashboardPage() {
     }
 
     const cleanRole = role.trim();
-    const roleUpper = cleanRole.toUpperCase();
-    const roleAlt = roleUpper.replace(/İ/g, 'I').replace(/Ç/g, 'C').replace(/Ğ/g, 'G').replace(/Ü/g, 'U').replace(/Ş/g, 'S').replace(/Ö/g, 'O');
+    const roleUpperForB = cleanRole.toUpperCase();
     
+    // 🔔 BİLDİRİM ÇEKME: Liste yapısına uygun "ov" filtresi mühürlendi.
     const { data: bData, count } = await supabase
       .from('bildirimler')
       .select('*', { count: 'exact' })
       .eq('is_read', false)
-      .filter('hedef_roller', 'ov', `{${cleanRole}, ${roleUpper}, ${roleAlt}}`) 
+      .filter('hedef_roller', 'ov', `{${roleUpperForB}}`) 
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -132,7 +134,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let channel: any;
-    let presenceChannel: any; // 🟢 Online takibi için
+    let presenceChannel: any;
 
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -145,7 +147,6 @@ export default function DashboardPage() {
         setUserRole(currentRole)
         fetchData(currentRole, user.id)
         
-        // --- 🟢 ONLINE PERSONEL TAKİBİ (PRESENCE) ---
         presenceChannel = supabase.channel('online-sync', {
             config: { presence: { key: 'user' } }
         })
@@ -158,7 +159,6 @@ export default function DashboardPage() {
                     name: p.name,
                     role: p.role
                 }));
-                // Aynı ID'ye sahip olanları teke indir (Duplicate engelleme)
                 const uniqueUsers = Array.from(new Map(users.map((u:any) => [u.id, u])).values());
                 setOnlineUsers(uniqueUsers);
             })
@@ -172,12 +172,13 @@ export default function DashboardPage() {
                 }
             });
 
-        channel = supabase.channel('dashboard-final-sync-v101')
+        // 🚀 REALTIME: Her değişikliği dinler ve Admin dahil herkesin sayfasını tazeler.
+        channel = supabase.channel(`dashboard-realtime-${user.id}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (payload: any) => { 
             if (payload.eventType === 'INSERT') playNotificationSound();
             fetchData(currentRole, user.id); 
           })
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bildirimler' }, () => { 
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'bildirimler' }, () => { 
              fetchData(currentRole, user.id); 
           })
           .subscribe()
@@ -219,12 +220,12 @@ export default function DashboardPage() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
             </span>
-            <span className="text-[7px] font-black italic uppercase text-blue-400 tracking-tighter">🤖 AI ÖNERİSİ: {oneri}</span>
+            <span className="text-[11px] font-black italic uppercase text-blue-400 tracking-tighter">🤖 AI ÖNERİSİ: {oneri}</span>
           </div>
         )}
-        <div className="font-black text-[12px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.musteri_adi}</div>
-        <div className="text-[10px] font-bold uppercase mb-3 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
-        <div className="flex justify-between items-center text-[9px] font-black opacity-60 text-gray-300 font-black">
+        <div className="font-black text-[13px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.musteri_adi}</div>
+        <div className="text-[11px] font-bold uppercase mb-3 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
+        <div className="flex justify-between items-center text-[10px] font-black opacity-60 text-gray-300 font-black">
             <span className={`uppercase ${ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi ? 'text-orange-500' : 'text-blue-400 animate-pulse'}`}>👤 {atananIsmi}</span>
             <span className="flex items-center gap-1 font-black">⏱️ {Math.floor(diff)} DK</span>
         </div>
@@ -258,7 +259,6 @@ export default function DashboardPage() {
 
         <nav className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
           {canSeeMap && <NavButton label="Saha Haritası" icon="🛰️" path="/dashboard/saha-haritasi" active />}
-          <NavButton label="Ana Sayfa" icon="🏠" path="/dashboard" />
           <NavButton label="Bildirimler" icon="🔔" onClick={() => setIsBildirimAcik(true)} />
           <div className="h-px bg-gray-800 my-4 opacity-50"></div>
           {canCreateJob && <NavButton label="İhbar Kayıt" icon="📢" path="/dashboard/yeni-ihbar" />}
@@ -269,13 +269,12 @@ export default function DashboardPage() {
           {canSeeReports && <NavButton label="Raporlama" icon="📊" path="/dashboard/raporlar" />}
           {canManageUsers && (
             <>
-              <NavButton label="Teknik Nesne" icon="⚙️" path="/dashboard/teknik-nesne-yonetimi" />
-              <NavButton label="AI Öğrenme" icon="🤖" path="/dashboard/ai-yonetim" />
+              <NavButton label="Teknik Nesne Yönetimi" icon="⚙️" path="/dashboard/teknik-nesne-yonetimi" />
+              <NavButton label="AI Öğrenme Merkezi" icon="🤖" path="/dashboard/ai-yonetim" />
             </>
           )}
         </nav>
 
-        {/* 🟢 ONLINE PERSONEL PANELİ (YENİ) */}
         <div className="px-4 py-2 border-t border-gray-800/50 bg-black/20">
             <h4 className="text-[8px] font-black text-green-500 uppercase italic mb-2 tracking-[0.2em] flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
@@ -313,14 +312,14 @@ export default function DashboardPage() {
         <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-5 rounded-3xl border border-gray-800 shadow-2xl mb-8">
           <div className="flex items-center gap-4">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-              <div className="font-black uppercase italic text-xs tracking-tighter">Sefine Shipyard // Denetim Merkezi</div>
+              <div className="font-black uppercase italic text-xs tracking-tighter">Saha 360 // Denetim Merkezi</div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-yellow-500/10 h-[750px] shadow-inner">
             <h3 className="text-[10px] font-black uppercase italic mb-6 text-yellow-500 flex items-center gap-2 tracking-[0.2em]">
-              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Havuz ({stats.bekleyen})
+              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Havuzda Bekleyen İhbarlar ({stats.bekleyen})
             </h3>
             <div className="overflow-y-auto flex-1 custom-scrollbar pr-2">
               {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('beklemede') && i.atanan_personel === null && i.atanan_grup_id === null).map(i => <JobCard key={i.id} ihbar={i} />)}
@@ -329,7 +328,7 @@ export default function DashboardPage() {
 
           <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-blue-500/10 h-[750px] shadow-inner">
             <h3 className="text-[10px] font-black uppercase italic mb-6 text-blue-400 flex items-center gap-2 tracking-[0.2em]">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> İşlemde / Duran ({stats.islemde})
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> İşlemde / Durdurulan İhbarlar ({stats.islemde})
             </h3>
             <div className="overflow-y-auto flex-1 custom-scrollbar pr-2">
               {ihbarlar.filter(i => {
@@ -341,7 +340,7 @@ export default function DashboardPage() {
 
           <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-green-500/10 h-[750px] shadow-inner">
             <h3 className="text-[10px] font-black uppercase italic mb-6 text-green-400 flex items-center gap-2 tracking-[0.2em]">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Biten ({stats.tamamlanan})
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Tamanlanan İhbarlar ({stats.tamamlanan})
             </h3>
             <div className="overflow-y-auto flex-1 custom-scrollbar pr-2">
               {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).map(i => <JobCard key={i.id} ihbar={i} />)}

@@ -140,7 +140,7 @@ export default function AIYonetimPage() {
         {/* Üst İşlem Paneli */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-8">
           <div className="lg:col-span-7 bg-[#1a1c23] border border-gray-800 p-6 rounded-[2rem] shadow-2xl">
-            <h3 className="text-orange-500 text-[9px] mb-3 tracking-widest uppercase">✍️ YENİ GRUP OLUŞTUR</h3>
+            <h3 className="text-orange-500 text-[9px] mb-3 tracking-widest uppercase">✍️ YENİ kombinasyon oluştur</h3>
             <textarea 
               value={manualKeywords} 
               onChange={(e) => setManualKeywords(e.target.value)}

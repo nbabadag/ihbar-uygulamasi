@@ -129,11 +129,12 @@ export default function IhbarDetay() {
     setLoading(false);
   }
 
+  // --- 🔔 BİLDİRİM GÖNDERME (ARRAY DESTEKLİ GÜNCELLENDİ) ---
   const bildirimGonder = async (mesaj: string, roller: string[]) => {
     await supabase.from('bildirimler').insert({
       ihbar_id: id,
       mesaj: mesaj,
-      hedef_roller: roller, 
+      hedef_roller: roller, // Veritabanındaki text[] sütununa array olarak gider
       is_read: false,
       islem_yapan_ad: userName || 'Sistem'
     });
@@ -153,7 +154,8 @@ export default function IhbarDetay() {
 
     if (!updateError) {
       const mesaj = stat === 'Tamamlandi' ? `✅ BİTTİ: ${ihbar.musteri_adi}` : `⚠️ DURDU: ${ihbar.musteri_adi}`;
-      const roller = stat === 'Tamamlandi' ? ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS'] : ['ÇAĞRI MERKEZİ', 'FORMEN'];
+      // Rollere uygun anahtar kelimeler gönderiliyor
+      const roller = stat === 'Tamamlandi' ? ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS', 'ADMİN'] : ['ÇAĞRI MERKEZİ', 'FORMEN', 'ADMİN'];
       await bildirimGonder(mesaj, roller);
       if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData();
     } else {
@@ -192,7 +194,7 @@ export default function IhbarDetay() {
             <div className="bg-[#1a1c23] p-8 rounded-[3rem] border border-gray-800 shadow-2xl">
               <h1 className="text-4xl mb-4 tracking-tighter">{ihbar.musteri_adi}</h1>
 
-              {/* 📞 HIZLI ARAMA BUTONU (MOBİL ÖNCELİKLİ) */}
+              {/* 📞 HIZLI ARAMA BUTONU */}
               {ihbar.tel_no && (ihbar.durum === 'Calisiliyor' || ihbar.durum === 'İşlemde') && (
                 <div className="w-full mb-8">
                   <a 

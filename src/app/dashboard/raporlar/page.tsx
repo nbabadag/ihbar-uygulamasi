@@ -173,9 +173,9 @@ export default function RaporlarPage() {
     <div className="min-h-screen bg-[#0a0b0e] flex flex-col md:flex-row text-white font-black italic uppercase">
       {/* SIDEBAR */}
       <div className="hidden md:flex w-64 bg-[#111318] p-6 shadow-2xl flex-col fixed h-full z-50 border-r border-gray-800">
-        <h2 className="text-xl font-black mb-10 text-orange-500 tracking-tighter">SAHA 360 AI</h2>
+        <h2 className="text-xl font-black mb-10 text-orange-500 tracking-tighter"></h2>
         <nav className="space-y-4">
-          <div onClick={() => router.push('/dashboard')} className="p-4 hover:bg-gray-800 rounded-2xl cursor-pointer transition-all border border-transparent hover:border-gray-700">🏠 Dashboard</div>
+          <div onClick={() => router.push('/dashboard')} className="p-4 hover:bg-gray-800 rounded-2xl cursor-pointer transition-all border border-transparent hover:border-gray-700">🏠 Ana Safya</div>
           <div className="p-4 bg-orange-600 rounded-2xl border border-orange-400 shadow-lg shadow-orange-900/20">📊 Raporlama</div>
         </nav>
       </div>
@@ -184,7 +184,7 @@ export default function RaporlarPage() {
         <header className="mb-10 flex justify-between items-center bg-[#111318]/50 p-6 rounded-[2.5rem] border border-gray-800">
           <div>
             <h1 className="text-2xl md:text-4xl text-white tracking-tighter">Stratejik Analiz & Rapor</h1>
-            <p className="text-[10px] text-orange-500 mt-2 tracking-widest italic font-black uppercase">IFS Varlık ve AI Performans İzleme</p>
+            <p className="text-[10px] text-orange-500 mt-2 tracking-widest italic font-black uppercase">Saha 360 AI v1 DESTEKLİ ANALİZ </p>
           </div>
           <button onClick={excelIndir} disabled={!izlendi} className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-3xl font-black text-xs transition-all shadow-xl active:scale-95 disabled:opacity-20 disabled:grayscale">
             📥 EXCEL (DETAYLI ANALİZ)
