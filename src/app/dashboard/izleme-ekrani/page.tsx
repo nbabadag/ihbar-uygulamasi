@@ -10,7 +10,6 @@ export default function TVIzlemePage() {
   const [now, setNow] = useState(new Date())
   const [mounted, setMounted] = useState(false)
   
-  // Otomatik kaydırma için referanslar
   const scrollRef1 = useRef<HTMLDivElement>(null)
   const scrollRef2 = useRef<HTMLDivElement>(null)
 
@@ -26,7 +25,6 @@ export default function TVIzlemePage() {
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
       const role = (profile?.role || '').toLowerCase()
 
-      // Ali Usta (Saha/Teknik/Personel) ise Dashboard'a geri gönder
       const isRestricted = role.includes('saha') || role.includes('teknik') || role.includes('personel') || role.includes('usta')
       const isFormen = role.includes('formen')
 
@@ -40,14 +38,35 @@ export default function TVIzlemePage() {
     checkAccess()
   }, [router])
 
-  // Hydration ve Zamanlayıcı
+  // 🔋 7/24 KESİNTİSİZ ÇALIŞMA MEKANİZMASI (ZORUNLU GÜNCELLEME)
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
+    // 1. Oturumu Canlı Tut: Her 20 dakikada bir Supabase ile konuşarak session'ın düşmesini engeller.
+    const keepAlive = setInterval(async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error || !data.session) {
+        console.warn("Oturum düştü, yeniden bağlanılıyor...");
+        window.location.reload(); // Oturum koptuysa sayfayı tazele (Auto-login için)
+      }
+    }, 1000 * 60 * 20);
 
-  // 🔄 OTOMATİK KAYDIRMA MANTIĞI (TV İÇİN)
+    // 2. Bellek Temizliği: Her 12 saatte bir sayfayı tamamen yenileyerek tarayıcıyı rahatlatır.
+    const autoRefresh = setTimeout(() => {
+      window.location.reload();
+    }, 1000 * 60 * 60 * 12);
+
+    // 3. Saat Güncelleyici
+    const timer = setInterval(() => setNow(new Date()), 1000)
+
+    return () => {
+      clearInterval(keepAlive);
+      clearInterval(timer);
+      clearTimeout(autoRefresh);
+    };
+  }, []);
+
+  // 🔄 OTOMATİK KAYDIRMA MANTIĞI
   useEffect(() => {
+    if (!mounted) return;
     const scrollInterval = setInterval(() => {
       [scrollRef1, scrollRef2].forEach(ref => {
         if (ref.current) {
@@ -59,7 +78,7 @@ export default function TVIzlemePage() {
           }
         }
       })
-    }, 50) // Kaydırma hızı
+    }, 50)
     return () => clearInterval(scrollInterval)
   }, [mounted])
 
