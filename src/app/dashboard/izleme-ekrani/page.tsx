@@ -12,255 +12,189 @@ export default function TVIzlemePage() {
   
   const scrollRef1 = useRef<HTMLDivElement>(null)
   const scrollRef2 = useRef<HTMLDivElement>(null)
+  const scrollRef3 = useRef<HTMLDivElement>(null)
 
-  // 🛡️ YETKİ KONTROLÜ VE GİRİŞ ENGELİ
+  // 🔋 7/24 KESİNTİSİZ ÇALIŞMA
   useEffect(() => {
-    const checkAccess = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/')
-        return
-      }
-
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-      const role = (profile?.role || '').toLowerCase()
-
-      const isRestricted = role.includes('saha') || role.includes('teknik') || role.includes('personel') || role.includes('usta')
-      const isFormen = role.includes('formen')
-
-      if (isRestricted && !isFormen) {
-        alert("Bu ekrana erişim yetkiniz bulunmamaktadır.")
-        router.push('/dashboard')
-      } else {
-        setMounted(true)
-      }
-    }
-    checkAccess()
-  }, [router])
-
-  // 🔋 7/24 KESİNTİSİZ ÇALIŞMA MEKANİZMASI (ZORUNLU GÜNCELLEME)
-  useEffect(() => {
-    // 1. Oturumu Canlı Tut: Her 20 dakikada bir Supabase ile konuşarak session'ın düşmesini engeller.
-    const keepAlive = setInterval(async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error || !data.session) {
-        console.warn("Oturum düştü, yeniden bağlanılıyor...");
-        window.location.reload(); // Oturum koptuysa sayfayı tazele (Auto-login için)
-      }
-    }, 1000 * 60 * 20);
-
-    // 2. Bellek Temizliği: Her 12 saatte bir sayfayı tamamen yenileyerek tarayıcıyı rahatlatır.
-    const autoRefresh = setTimeout(() => {
-      window.location.reload();
-    }, 1000 * 60 * 60 * 12);
-
-    // 3. Saat Güncelleyici
     const timer = setInterval(() => setNow(new Date()), 1000)
-
-    return () => {
-      clearInterval(keepAlive);
-      clearInterval(timer);
-      clearTimeout(autoRefresh);
-    };
+    const autoRefresh = setTimeout(() => window.location.reload(), 1000 * 60 * 60 * 12)
+    return () => { clearInterval(timer); clearTimeout(autoRefresh); };
   }, []);
-
-  // 🔄 OTOMATİK KAYDIRMA MANTIĞI
-  useEffect(() => {
-    if (!mounted) return;
-    const scrollInterval = setInterval(() => {
-      [scrollRef1, scrollRef2].forEach(ref => {
-        if (ref.current) {
-          const { scrollTop, scrollHeight, clientHeight } = ref.current
-          if (scrollTop + clientHeight >= scrollHeight - 1) {
-            ref.current.scrollTo({ top: 0, behavior: 'smooth' })
-          } else {
-            ref.current.scrollBy({ top: 1, behavior: 'auto' })
-          }
-        }
-      })
-    }, 50)
-    return () => clearInterval(scrollInterval)
-  }, [mounted])
 
   const fetchData = useCallback(async () => {
     const { data } = await supabase.from('ihbarlar').select(`
-      *,
-      profiles:atanan_personel (full_name),
+      *, 
+      profiles:atanan_personel (full_name), 
       calisma_gruplari:atanan_grup_id (grup_adi)
-    `).order('created_at', { ascending: false })
-    
+    `).order('created_at', { ascending: false });
     if (data) setIhbarlar(data)
   }, [])
 
   useEffect(() => {
-    if (!mounted) return
-    fetchData()
-    const channel = supabase.channel('tv-modu')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => fetchData())
-      .subscribe()
+    const checkAccess = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/'); return; }
+      setMounted(true)
+    }
+    checkAccess(); fetchData();
+    const channel = supabase.channel('tv-modu').on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, () => fetchData()).subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fetchData, mounted])
+  }, [fetchData, router])
 
-  // --- İSTATİSTİK HESAPLAMALARI ---
+  // 🔄 OTOMATİK YUKARI KAYDIRMA
+  useEffect(() => {
+    if (!mounted) return;
+    const scrollInterval = setInterval(() => {
+      [scrollRef1, scrollRef2, scrollRef3].forEach(ref => {
+        if (ref.current) {
+          const { scrollTop, scrollHeight, clientHeight } = ref.current
+          if (scrollTop + clientHeight >= scrollHeight - 1) {
+            ref.current.scrollTo({ top: 0, behavior: 'smooth' })
+          } else { ref.current.scrollBy({ top: 1, behavior: 'auto' }) }
+        }
+      })
+    }, 45)
+    return () => clearInterval(scrollInterval)
+  }, [mounted])
+
+  // 📊 İSTATİSTİK MANTIKLARI
   const getStats = (items: any[]) => ({
-    toplam: items.length,
     bekleyen: items.filter(i => (i.durum || '').toLowerCase().includes('beklemede')).length,
-    atanan: items.filter(i => {
-        const d = (i.durum || '').toLowerCase();
-        return d.includes('islemde') || d.includes('calisiliyor') || d.includes('durduruldu');
+    islemde: items.filter(i => {
+      const d = (i.durum || '').toLowerCase();
+      return d.includes('islemde') || d.includes('calisiliyor') || d.includes('durduruldu');
     }).length,
-    kapatilan: items.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).length
+    tamamlanan: items.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).length
   })
 
-  const todayStr = new Date().toISOString().split('T')[0]
-  const todayJobs = ihbarlar.filter(i => i.created_at.startsWith(todayStr))
-  const todayStats = getStats(todayJobs)
+  const todayStr = now.toISOString().split('T')[0]
+  const startOfWeek = new Date(); startOfWeek.setDate(now.getDate() - 7);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const currentMonthName = now.toLocaleDateString('tr-TR', { month: 'long' }).toUpperCase();
 
-  const oneWeekAgo = new Date()
-  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
-  const weekJobs = ihbarlar.filter(i => new Date(i.created_at) >= oneWeekAgo)
-  const weekStats = getStats(weekJobs)
-
-  if (!mounted) return <div className="h-screen bg-slate-950 flex items-center justify-center text-white font-black italic uppercase animate-pulse">Yetki Kontrol Ediliyor...</div>
+  const dailyStats = getStats(ihbarlar.filter(i => i.created_at.startsWith(todayStr)))
+  const weeklyStats = getStats(ihbarlar.filter(i => new Date(i.created_at) >= startOfWeek))
+  const monthlyStats = getStats(ihbarlar.filter(i => new Date(i.created_at) >= startOfMonth))
 
   const TVCard = ({ job }: { job: any }) => {
     const diff = (now.getTime() - new Date(job.created_at).getTime()) / 60000
     const durum = (job.durum || '').toLowerCase();
+    const isNew = diff <= 5 && durum.includes('beklemede')
     const isDelayed = durum.includes('beklemede') && diff >= 30
     const isDurduruldu = durum.includes('durduruldu');
-    const sorumlu = job.profiles?.full_name || job.calisma_gruplari?.grup_adi || 'HAVUZDA'
+    
+    let sahaDurumYazisi = "ATAMA BEKLENİYOR";
+    let durumRengi = "text-blue-600";
+    if (job.varis_tarihi) { sahaDurumYazisi = "🔧 ARIZA BAŞINDA"; durumRengi = "text-yellow-600"; }
+    else if (job.kabul_tarihi) { sahaDurumYazisi = "🚛 EKİP YOLDA"; durumRengi = "text-orange-600"; }
 
     return (
-      <div className={`p-4 rounded-[1.2rem] border-4 mb-2 shadow-lg transition-all ${
-        isDurduruldu ? 'bg-slate-800 border-red-600/50 text-gray-400' :
-        isDelayed ? 'bg-red-600 border-red-400 animate-pulse text-white' : 
-        'bg-white border-transparent text-black'
+      <div className={`p-4 rounded-[1.5rem] border-l-[12px] mb-3 shadow-2xl transition-all ${
+        isNew ? 'bg-red-600 border-white animate-pulse text-white' : 
+        isDurduruldu ? 'bg-slate-800 border-red-600 text-gray-400' :
+        isDelayed ? 'bg-red-900 border-red-500 text-white' : 'bg-white border-blue-600 text-black'
       }`}>
-        <div className="flex justify-between items-center mb-1">
-          <h4 className="text-lg font-black uppercase italic tracking-tighter truncate leading-none flex-1">
-            {isDurduruldu && <span className="text-red-500 mr-2">🛑</span>}
-            {job.musteri_adi}
-          </h4>
-          <span className="text-[10px] font-black opacity-60 ml-2">
-            {new Date(job.created_at).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})}
-          </span>
+        <div className="flex justify-between items-start mb-1">
+          <div className="flex-1 overflow-hidden">
+            <h4 className="text-xl font-black uppercase italic tracking-tighter truncate leading-tight">{isNew && "🚨 "}{job.ihbar_veren_ad_soyad}</h4>
+            {job.secilen_nesne_adi && <div className={`text-[11px] font-black italic uppercase ${isNew || isDelayed ? 'text-white' : 'text-orange-600'}`}>⚙️ {job.secilen_nesne_adi}</div>}
+          </div>
+          <span className="text-[12px] font-black opacity-60 ml-2">{new Date(job.created_at).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})}</span>
         </div>
-        <div className="flex justify-between items-center mb-2">
-          <p className={`text-[11px] font-bold uppercase truncate ${isDelayed ? 'text-red-100' : isDurduruldu ? 'text-gray-500' : 'text-gray-500'}`}>{job.konu}</p>
-          <span className={`text-[9px] font-black px-2 py-0.5 rounded ${isDurduruldu ? 'bg-red-900/20 text-red-500' : isDelayed ? 'bg-white text-red-600' : 'bg-gray-100 text-gray-400'}`}>
-            {isDurduruldu ? 'DURDU' : `${Math.floor(diff)} DK`}
-          </span>
+        
+        {/* 👥 YARDIMCI PERSONELLER (SAHA) */}
+        {job.yardimcilar && job.yardimcilar.length > 0 && (
+          <div className={`text-[9px] font-black mb-1 italic uppercase ${isNew || isDelayed ? 'text-white/80' : 'text-gray-500'}`}>
+            👥 EKİP: {job.yardimcilar.join(', ')}
+          </div>
+        )}
+
+        <p className={`text-[12px] font-bold uppercase truncate mb-2 ${isNew || isDelayed ? 'text-red-100' : 'text-gray-500'}`}>{job.konu}</p>
+        <div className={`text-[10px] font-black italic uppercase mb-2 px-2 py-1 rounded-lg ${isNew ? 'bg-white text-red-600' : 'bg-gray-100'} ${isDelayed ? 'bg-red-700 text-white' : durumRengi}`}>
+           {isDurduruldu ? '🛑 İŞ DURDURULDU' : sahaDurumYazisi}
         </div>
-        <div className={`text-[9px] font-black uppercase italic border-t pt-2 flex justify-between items-center ${isDurduruldu ? 'border-gray-700 text-gray-500' : isDelayed ? 'border-red-400/50 text-white' : 'border-gray-100 text-blue-600'}`}>
-           <span>👤 {sorumlu}</span>
-           <span className="opacity-50 tracking-widest">{job.ifs_is_emri_no ? `#${job.ifs_is_emri_no}` : ''}</span>
+        <div className={`text-[11px] font-black uppercase italic border-t pt-2 flex justify-between items-center ${isNew || isDelayed ? 'border-red-400/50' : 'border-gray-200 text-blue-800'}`}>
+           <span>👤 {job.profiles?.full_name || job.calisma_gruplari?.grup_adi || 'HAVUZ'}</span>
+           <span className="opacity-50">#{job.ifs_is_emri_no || job.id}</span>
         </div>
       </div>
     )
   }
 
-  const CompactCard = ({ job }: { job: any }) => (
-    <div className="p-2.5 bg-white/90 rounded-xl border-l-4 border-green-500 mb-1.5 shadow-sm flex justify-between items-center">
-      <div className="overflow-hidden flex-1 text-black">
-        <h4 className="text-[11px] font-black uppercase italic truncate leading-none">{job.musteri_adi}</h4>
-        <p className="text-[9px] font-bold text-gray-500 uppercase truncate mt-0.5">{job.konu}</p>
+  const StatBox = ({ label, stats, color }: { label: string, stats: any, color: string }) => (
+    <div className="bg-[#1a1c23] rounded-[2rem] p-4 border-2 border-slate-800 shadow-2xl flex flex-col gap-2">
+      <h2 className={`${color} text-[10px] tracking-[0.2em] text-center mb-1 font-black`}>{label}</h2>
+      <div className="grid grid-cols-3 gap-1 text-center tabular-nums">
+        <div className="bg-black/30 p-2 rounded-xl border border-white/5"><p className="text-[7px] opacity-40">BEK</p><p className="text-xl text-yellow-500">{stats.bekleyen}</p></div>
+        <div className="bg-black/30 p-2 rounded-xl border border-white/5"><p className="text-[7px] opacity-40">İŞL</p><p className="text-xl text-blue-500">{stats.islemde}</p></div>
+        <div className="bg-black/30 p-2 rounded-xl border border-white/5"><p className="text-[7px] opacity-40">BİT</p><p className="text-xl text-green-500">{stats.tamamlanan}</p></div>
       </div>
-      <div className="text-[10px] font-black text-green-600 ml-2">OK</div>
     </div>
   )
 
-  const StatSquare = ({ label, value, colorClass }: { label: string, value: number, colorClass: string }) => (
-    <div className="bg-slate-900/50 border border-slate-700 p-3 rounded-2xl flex flex-col justify-center items-center text-center">
-      <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter mb-1">{label}</span>
-      <span className={`text-2xl font-black italic tracking-tighter ${colorClass}`}>{value}</span>
-    </div>
-  )
+  if (!mounted) return null
 
   return (
-    <div className="h-screen w-screen bg-slate-950 p-3 flex flex-col font-sans overflow-hidden text-white relative">
+    <div className="h-screen w-screen bg-black p-4 flex flex-col font-sans overflow-hidden text-white italic font-black uppercase">
       
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-3 bg-blue-700 p-4 rounded-[1.5rem] shadow-2xl border-b-4 border-blue-900">
-        <h1 className="text-xl font-black italic tracking-tighter uppercase leading-none">Saha 360 // CANLI İZLEME PANELİ</h1>
-        <div className="text-right flex items-center gap-6">
-          <div className="text-xs font-bold opacity-70 uppercase tabular-nums">
-            {now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} | {now.toLocaleTimeString('tr-TR')}
-          </div>
-          <button onClick={() => router.push('/dashboard')} className="bg-white/10 p-2 px-4 rounded-xl text-[10px] font-black hover:bg-white/20 transition-all">PANELİ KAPAT</button>
+      {/* 🟠 HEADER (TURUNCU) */}
+      <div className="flex justify-between items-center mb-4 bg-[#1a1c23] p-5 rounded-[2rem] border-b-4 border-orange-600 shadow-2xl">
+        <div className="flex flex-col"><h1 className="text-3xl text-orange-500">SAHA 360 // OPERASYON İZLEME</h1><p className="text-[10px] opacity-50 tracking-[0.3em]">KOMUTA MERKEZİ</p></div>
+        <div className="flex items-center gap-10">
+          <div className="text-right tabular-nums"><div className="text-2xl text-orange-500 font-black italic uppercase">{now.toLocaleTimeString('tr-TR')}</div><div className="text-[10px] text-orange-400 opacity-80 font-black italic uppercase">{now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}</div></div>
+          <button onClick={() => router.push('/dashboard')} className="bg-orange-600 p-4 px-8 rounded-2xl text-[12px] border-b-4 border-orange-900 shadow-xl font-black italic uppercase">ANA SAYFA</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 flex-1 min-h-0">
+      <div className="grid grid-cols-4 gap-4 flex-1 min-h-0">
         
-        {/* 1. SÜTUN: AÇIK İHBARLAR */}
-        <div className="flex flex-col bg-yellow-400/5 rounded-[2rem] border-2 border-yellow-400/20 overflow-hidden">
-          <div className="p-3 bg-yellow-400 text-yellow-900 flex justify-between items-center">
-            <h2 className="text-xs font-black uppercase italic tracking-tighter">🟡 Havuzda Bekleyen İhbarlar</h2>
-            <span className="text-lg font-black">{ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('beklemede')).length}</span>
-          </div>
-          <div ref={scrollRef1} className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-            {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('beklemede')).map(job => <TVCard key={job.id} job={job} />)}
+        {/* SÜTUN 1: BEKLEYENLER */}
+        <div className="flex flex-col bg-[#1a1c23] rounded-[2.5rem] border-2 border-yellow-500/20 overflow-hidden shadow-inner font-black italic uppercase">
+          <div className="p-4 bg-yellow-500 text-yellow-950 flex justify-between items-center shadow-lg font-black italic uppercase"><h2 className="text-sm">🟡 HAVUZDAKİLER</h2><span className="text-2xl">{dailyStats.bekleyen}</span></div>
+          <div ref={scrollRef1} className="flex-1 overflow-y-auto p-3 scrollbar-hide">
+            {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('beklemede') && !i.atanan_personel).map(job => <TVCard key={job.id} job={job} />)}
           </div>
         </div>
 
-        {/* 2. SÜTUN: İŞLEMDE OLANLAR / DURDURULANLAR */}
-        <div className="flex flex-col bg-blue-500/5 rounded-[2rem] border-2 border-blue-500/20 overflow-hidden">
-          <div className="p-3 bg-blue-600 text-white flex justify-between items-center">
-            <h2 className="text-xs font-black uppercase italic tracking-tighter">🔵 İşlemde / Durdurulan İhbarlar</h2>
-            <span className="text-lg font-black">
-                {ihbarlar.filter(i => {
-                    const d = (i.durum || '').toLowerCase();
-                    return d.includes('islemde') || d.includes('calisiliyor') || d.includes('durduruldu');
-                }).length}
-            </span>
-          </div>
-          <div ref={scrollRef2} className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-            {ihbarlar.filter(i => {
-                const d = (i.durum || '').toLowerCase();
-                return d.includes('islemde') || d.includes('calisiliyor') || d.includes('durduruldu');
-            }).map(job => <TVCard key={job.id} job={job} />)}
+        {/* SÜTUN 2: AKTİF SAHA */}
+        <div className="flex flex-col bg-[#1a1c23] rounded-[2.5rem] border-2 border-blue-500/20 overflow-hidden shadow-inner font-black italic uppercase">
+          <div className="p-4 bg-blue-600 text-white flex justify-between items-center shadow-lg font-black italic uppercase"><h2 className="text-sm">🔵 SAHA EKİPLERİ</h2><span className="text-2xl">{dailyStats.islemde}</span></div>
+          <div ref={scrollRef2} className="flex-1 overflow-y-auto p-3 scrollbar-hide font-black italic uppercase">
+            {ihbarlar.filter(i => !i.durum?.toLowerCase().includes('tamamlandi') && (i.atanan_personel || i.atanan_grup_id)).map(job => <TVCard key={job.id} job={job} />)}
           </div>
         </div>
 
-        {/* 3. SÜTUN: SON TAMAMLANANLAR */}
-        <div className="flex flex-col bg-green-500/5 rounded-[2rem] border-2 border-green-500/20 overflow-hidden">
-          <div className="p-3 bg-green-600 text-white flex justify-between items-center">
-            <h2 className="text-xs font-black uppercase italic tracking-tighter">🟢 Tamanlanan Son İhbarlar</h2>
-            <span className="text-lg font-black">{ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).length}</span>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-            {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).slice(0, 15).map(job => <CompactCard key={job.id} job={job} />)}
+        {/* SÜTUN 3: TAMAMLANANLAR (BUGÜN) */}
+        <div className="flex flex-col bg-[#1a1c23] rounded-[2.5rem] border-2 border-green-500/20 overflow-hidden shadow-inner font-black italic uppercase">
+          <div className="p-4 bg-green-600 text-white flex justify-between items-center shadow-lg font-black italic uppercase font-black italic uppercase"><h2 className="text-sm">🟢 BUGÜN BİTENLER</h2><span className="text-2xl font-black italic uppercase font-black italic uppercase">{dailyStats.tamamlanan}</span></div>
+          <div ref={scrollRef3} className="flex-1 overflow-y-auto p-3 scrollbar-hide">
+            {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi') && i.created_at.startsWith(todayStr)).map(job => (
+              <div key={job.id} className="bg-white text-black p-3 rounded-2xl border-l-8 border-green-500 mb-2 shadow-md flex flex-col">
+                <div className="flex justify-between items-center font-black italic uppercase"><h4 className="text-[12px] font-black italic uppercase truncate leading-none">{job.ihbar_veren_ad_soyad}</h4><div className="text-[10px] font-black text-green-600 italic uppercase">OK</div></div>
+                <p className="text-[9px] opacity-60 italic uppercase mt-1">⚙️ {job.secilen_nesne_adi}</p>
+                {/* 👥 YARDIMCI PERSONELLER (TAMAMLANAN) */}
+                {job.yardimcilar && job.yardimcilar.length > 0 && (
+                  <p className="text-[8px] font-black text-gray-500 mt-1 border-t border-gray-100 pt-1 uppercase">👥 EKİP: {job.yardimcilar.join(', ')}</p>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* 4. SÜTUN: İSTATİSTİKLER */}
-        <div className="flex flex-col gap-3">
-          <div className="flex-1 flex flex-col bg-slate-800 rounded-[2rem] border-2 border-slate-700 p-4 shadow-xl">
-            <h2 className="text-[10px] font-black text-blue-400 uppercase italic tracking-widest text-center mb-3">📊 GÜNÜN ÖZETİ</h2>
-            <div className="grid grid-cols-2 gap-2 flex-1">
-              <StatSquare label="TOPLAM" value={todayStats.toplam} colorClass="text-white" />
-              <StatSquare label="BEKLEYEN" value={todayStats.bekleyen} colorClass="text-yellow-400" />
-              <StatSquare label="ATANAN" value={todayStats.atanan} colorClass="text-blue-400" />
-              <StatSquare label="KAPATILAN" value={todayStats.kapatilan} colorClass="text-green-400" />
-            </div>
-          </div>
+        {/* 📊 SAĞ TARAF: İSTATİSTİKLER VE LOGO */}
+        <div className="flex flex-col gap-3 overflow-hidden min-h-0 font-black italic uppercase font-black italic uppercase">
+          <StatBox label="📊 GÜNÜN ÖZETİ" stats={dailyStats} color="text-orange-500" />
+          <StatBox label="📅 HAFTANIN ÖZETİ" stats={weeklyStats} color="text-orange-400" />
+          <StatBox label={`🌙 ${currentMonthName} ÖZETİ`} stats={monthlyStats} color="text-orange-300" />
 
-          <div className="flex-1 flex flex-col bg-slate-900 rounded-[2rem] border-2 border-slate-800 p-4 shadow-xl">
-            <h2 className="text-[10px] font-black text-orange-400 uppercase italic tracking-widest text-center mb-3">📅 HAFTANIN ÖZETİ</h2>
-            <div className="grid grid-cols-2 gap-2 flex-1">
-              <StatSquare label="TOPLAM" value={weekStats.toplam} colorClass="text-white" />
-              <StatSquare label="BEKLEYEN" value={weekStats.bekleyen} colorClass="text-yellow-400" />
-              <StatSquare label="ATANAN" value={weekStats.atanan} colorClass="text-blue-400" />
-              <StatSquare label="KAPATILAN" value={weekStats.kapatilan} colorClass="text-green-400" />
-            </div>
+          {/* 🖼️ LOGO ALANI (ANA SAYFA RENGİ) */}
+          <div className="bg-[#1a1c23] rounded-[2.5rem] border-2 border-orange-500 flex-1 flex items-center justify-center p-6 shadow-2xl overflow-hidden">
+             <img src="/logo.png" alt="Logo" className="max-w-full max-h-full object-contain" />
           </div>
         </div>
       </div>
 
-      <style jsx>{`
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
+      <style jsx>{` .scrollbar-hide::-webkit-scrollbar { display: none; } .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; } `}</style>
     </div>
   )
 }
