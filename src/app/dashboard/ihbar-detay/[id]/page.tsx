@@ -44,11 +44,8 @@ export default function IhbarDetay() {
       if (typeof window === 'undefined' || !navigator.geolocation) return resolve(null);
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => {
-          console.warn("GPS Alınamadı:", err.message);
-          resolve(null);
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        (err) => { resolve(null); },
+        { enableHighAccuracy: true, timeout: 5000 }
       );
     });
   };
@@ -90,8 +87,12 @@ export default function IhbarDetay() {
       setSeciliGrup(ihbarRes.data.atanan_grup_id || ''); 
       setPersonelNotu(ihbarRes.data.personel_notu || '');
       
+      // Veritabanı sütun isimlerine göre nesneyi yükle
       if (ihbarRes.data.secilen_nesne_adi) {
-        setSecilenNesne({ nesne_adi: ihbarRes.data.secilen_nesne_adi, ifs_kod: ihbarRes.data.secilen_nesne_kod || '' });
+        setSecilenNesne({ 
+          nesne_adi: ihbarRes.data.secilen_nesne_adi, 
+          ifs_kod: ihbarRes.data.secilen_nesne_kod || '' 
+        });
       }
     }
     setPersoneller(pRes.data?.filter(p => !p.role.toUpperCase().includes('ÇAĞRI')) || []); 
@@ -113,12 +114,12 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
-  // --- 1. NOKTA: İŞE BAŞLA ---
+  // 1. NOKTA GPS: İŞE BAŞLA
   const isiBaslat = async () => {
     setLoading(true);
     const pos = await getGpsPosition();
     const { error } = await supabase.from('ihbarlar').update({ 
-      durum: 'Calisiliyor', 
+      durum: 'Calisiliyor', // Tablodaki Check Constraint'e uygun
       kabul_tarihi: new Date().toISOString(), 
       atanan_personel: userId,
       enlem: pos?.lat || null, 
@@ -128,7 +129,7 @@ export default function IhbarDetay() {
     setLoading(false);
   }
 
-  // --- 2. NOKTA: ARIZA NOKTASINDAYIM ---
+  // 2. NOKTA GPS: ARIZA NOKTASINDAYIM
   const arizaNoktasindayim = async () => {
     setLoading(true);
     const pos = await getGpsPosition();
@@ -137,7 +138,7 @@ export default function IhbarDetay() {
       varis_enlem: pos?.lat || null,
       varis_boylam: pos?.lng || null
     }).eq('id', id);
-    if (error) alert(error.message); else { alert("VARIS MUHURLENDI!"); fetchData(); }
+    if (error) alert(error.message); else { alert("VARIŞ MÜHÜRLENDİ!"); fetchData(); }
     setLoading(false);
   }
 
@@ -151,7 +152,7 @@ export default function IhbarDetay() {
     });
   };
 
-  // --- 3. NOKTA: İŞİ KAPAT ---
+  // 3. NOKTA GPS: İŞİ BİTİR
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
@@ -169,12 +170,11 @@ export default function IhbarDetay() {
       const roller = stat === 'Tamamlandi' ? ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS', 'ADMİN'] : ['ÇAĞRI MERKEZİ', 'FORMEN', 'ADMİN'];
       await bildirimGonder(mesaj, roller);
       if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData();
-    } else {
-      alert("Hata: " + updateError.message);
-    }
+    } else { alert("Hata: " + updateError.message); }
     setLoading(false);
   }
 
+  // --- ⚙️ KRİTİK MÜHÜRLER: TEKNİK NESNE KAYDI ---
   const bilgileriMuhurle = async () => {
     setLoading(true);
     const { error } = await supabase.from('ihbarlar').update({ 
@@ -183,12 +183,13 @@ export default function IhbarDetay() {
       atanan_personel: seciliAtanan || null, 
       atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), 
       ifs_is_emri_no: ifsNo, 
-      secilen_nesne_adi: secilenNesne?.nesne_adi || null, // TEKNIK NESNE BURADA MÜHÜRLENİYOR
+      // Tablo sütun isimlerinle birebir eşleşme sağlandı
+      secilen_nesne_adi: secilenNesne?.nesne_adi || null, 
       secilen_nesne_kod: secilenNesne?.ifs_kod || null
     }).eq('id', id);
+
     if (error) alert("Mühürleme Hatası: " + error.message);
-    else alert("KAYDEDİLDİ"); 
-    fetchData(); 
+    else { alert("KAYDEDİLDİ"); fetchData(); }
     setLoading(false);
   }
 
@@ -198,6 +199,7 @@ export default function IhbarDetay() {
     <div className="min-h-screen flex flex-col text-white font-sans bg-[#0a0b0e] font-black uppercase italic">
       <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 w-full relative z-10">
         
+        {/* ÜST BAR */}
         <div className="flex justify-between items-center bg-[#111318] p-5 rounded-2xl border border-gray-800 shadow-2xl">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl text-[10px]">← GERİ</button>
           <div className="text-[10px] flex items-center gap-4">
@@ -215,31 +217,10 @@ export default function IhbarDetay() {
             <div className="bg-[#1a1c23] p-8 rounded-[3rem] border border-gray-800 shadow-2xl">
               <h1 className="text-4xl mb-4 tracking-tighter">{ihbar.musteri_adi}</h1>
 
-              {ihbar.tel_no && (ihbar.durum === 'Calisiliyor' || ihbar.durum === 'İşlemde') && (
-                <div className="w-full mb-8">
-                  <a 
-                    href={`tel:${ihbar.tel_no}`} 
-                    className="flex items-center justify-between bg-gradient-to-r from-green-600 to-green-500 p-6 rounded-[2rem] shadow-2xl active:scale-95 transition-all border-b-8 border-green-800"
-                  >
-                    <div className="flex items-center gap-5">
-                      <div className="bg-white/20 p-4 rounded-full animate-bounce">
-                        <span className="text-3xl">📞</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[10px] font-black text-white/70 uppercase tracking-[0.2em] italic">İHBAR YAPANIK ARA</span>
-                        <span className="text-2xl font-black tracking-tighter text-white">{ihbar.tel_no}</span>
-                      </div>
-                    </div>
-                    <div className="bg-white/10 px-6 py-3 rounded-2xl border border-white/20">
-                      <span className="text-xs font-black text-white uppercase italic">ARAMA YAP</span>
-                    </div>
-                  </a>
-                </div>
-              )}
-
               <div className="mb-6">{canEditIhbar ? ( <input className="w-full bg-black/50 border border-orange-500/30 p-4 rounded-2xl text-lg text-blue-400 outline-none" value={editKonu} onChange={e => setEditKonu(e.target.value)} /> ) : ( <p className="text-lg text-blue-400">{ihbar.konu}</p> )}</div>
               <div className="bg-black/30 p-6 rounded-3xl mb-8 border border-gray-800/50 italic">{canEditIhbar ? ( <textarea className="w-full bg-transparent border-none text-gray-300 text-sm outline-none resize-none" rows={3} value={editAciklama} onChange={e => setEditAciklama(e.target.value)} /> ) : ( <p className="text-gray-300 text-sm font-black italic">"{ihbar.aciklama}"</p> )}</div>
               
+              {/* ⚙️ TEKNİK NESNE SEÇİMİ */}
               <div className="bg-[#111318] p-6 rounded-3xl border border-blue-500/20 mb-8 font-black uppercase italic">
                 <p className="text-blue-400 text-[10px] mb-4 tracking-widest italic font-black uppercase">⚙️ TEKNİK NESNE & VARLIK</p>
                 {secilenNesne ? (
@@ -296,13 +277,13 @@ export default function IhbarDetay() {
             <div className="bg-[#111318] p-8 rounded-[2.5rem] border border-orange-500/20 shadow-2xl font-black italic uppercase">
               {ihbar.durum === 'Calisiliyor' ? (
                 <div className="space-y-6">
-                   {/* 🛰️ YENİ EKlenen 2. NOKTA GPS BUTONU */}
+                  {/* 📍 2. NOKTA GPS MÜHRÜ */}
                   {!ihbar.varis_enlem && (
                     <button onClick={arizaNoktasindayim} className="w-full bg-yellow-600 py-6 rounded-3xl text-sm shadow-xl font-black italic uppercase active:scale-95 transition-all border-b-4 border-yellow-800">📍 ARIZA NOKTASINDAYIM</button>
                   )}
                   {ihbar.varis_enlem && (
                     <div className="bg-green-900/20 p-3 rounded-2xl border border-green-800/50 text-center">
-                      <p className="text-[8px] text-green-500">VARIS DOĞRULANDI ✅</p>
+                      <p className="text-[8px] text-green-500">VARIŞ DOĞRULANDI ✅</p>
                     </div>
                   )}
 
@@ -336,9 +317,6 @@ export default function IhbarDetay() {
           </div>
         </div>
       </div>
-      <style jsx>{`
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-      `}</style>
     </div>
   )
 }
