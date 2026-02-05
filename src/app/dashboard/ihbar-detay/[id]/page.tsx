@@ -42,7 +42,15 @@ export default function IhbarDetay() {
   
   const canEditIhbar = isCagriMerkezi || isAdmin || isMudur; 
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
-  const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
+  
+  // 🚀 VARDİYA MODU YETKİ MÜHÜRÜ: Atanmamış Vardiya İhbarlarını Ekip Alabilir
+  const isVardiyaHavuz = ihbar?.oncelik_durumu === 'VARDİYA_MODU' && !ihbar.atanan_personel;
+  const canStartJob = !isCagriMerkezi && (
+    ihbar?.atanan_personel === userId || 
+    userMemberGroups.includes(ihbar?.atanan_grup_id) || 
+    isAdmin || isMudur || 
+    isVardiyaHavuz
+  );
 
   const getGpsPosition = (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
@@ -84,8 +92,6 @@ export default function IhbarDetay() {
       setSeciliGrup(d.atanan_grup_id || ''); 
       setPersonelNotu(d.personel_notu || '');
       setYardimcilar(d.yardimcilar || []);
-      
-      // 🛠️ FETCH MÜHÜRÜ: Kayıtlı nesneyi state'e yükle
       if (d.secilen_nesne_adi) {
         setSecilenNesne({ nesne_adi: d.secilen_nesne_adi, ifs_kod: d.secilen_nesne_kod || '' });
       }
@@ -112,7 +118,6 @@ export default function IhbarDetay() {
   const yardimciEkleCikar = async (personelAd: string) => {
     let yeniListe = yardimcilar.includes(personelAd) ? yardimcilar.filter(item => item !== personelAd) : [...yardimcilar, personelAd];
     setYardimcilar(yeniListe);
-    // Anlık güncelleme
     await supabase.from('ihbarlar').update({ yardimcilar: yeniListe }).eq('id', id);
   }
 
@@ -136,26 +141,29 @@ export default function IhbarDetay() {
   const isiBaslat = async () => {
     setLoading(true);
     const pos = await getGpsPosition();
-    const { error } = await supabase.from('ihbarlar').update({ 
+    
+    // 🚀 HAVUZDAN ALMA MANTIĞI: Eğer atanan yoksa personeli otomatik ata
+    const guncelleme: any = {
       durum: 'Calisiliyor', 
       kabul_tarihi: new Date().toISOString(), 
       enlem: pos?.lat || null, 
       boylam: pos?.lng || null 
-    }).eq('id', id);
+    };
+
+    if (isVardiyaHavuz) {
+      guncelleme.atanan_personel = userId;
+      guncelleme.atama_tarihi = new Date().toISOString();
+    }
+
+    const { error } = await supabase.from('ihbarlar').update(guncelleme).eq('id', id);
     if (!error) fetchData();
     setLoading(false);
   }
 
-  // 🚀 YENİ MÜHÜRLEME MANTIĞI: ARIZA NOKTASINDAYIM (Variş + Nesne + Ekip Paketi)
   const arizaNoktasindayim = async () => {
-    if (!secilenNesne) {
-      return alert("⚠️ ARIZA NOKTASINA VARDIĞINIZI ONAYLAMAK İÇİN ÖNCE TEKNİK NESNE SEÇMELİSİNİZ!");
-    }
-
+    if (!secilenNesne) return alert("⚠️ ARIZA NOKTASINA VARDIĞINIZI ONAYLAMAK İÇİN ÖNCE TEKNİK NESNE SEÇMELİSİNİZ!");
     setLoading(true);
     const pos = await getGpsPosition();
-    
-    // 📦 TÜM KRİTİK VERİYİ AYNI ANDA MÜHÜRLE
     const { error } = await supabase.from('ihbarlar').update({ 
       varis_tarihi: new Date().toISOString(), 
       varis_enlem: pos?.lat || null, 
@@ -164,13 +172,7 @@ export default function IhbarDetay() {
       secilen_nesne_kod: secilenNesne.ifs_kod || null,
       yardimcilar: yardimcilar
     }).eq('id', id);
-
-    if (!error) {
-      alert("✅ ARIZA NOKTASI, TEKNİK NESNE VE EKİP BİLGİLERİ MÜHÜRLENDİ!");
-      fetchData();
-    } else {
-      alert("HATA: " + error.message);
-    }
+    if (!error) { alert("✅ VARIŞ MÜHÜRLENDİ!"); fetchData(); }
     setLoading(false);
   }
 
@@ -187,20 +189,13 @@ export default function IhbarDetay() {
       bitis_boylam: pos?.lng || null, 
       calisma_suresi_dakika: sure 
     }).eq('id', id);
-
-    if (!error) { 
-      if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData(); 
-    }
+    if (!error) { if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData(); }
     setLoading(false);
   }
 
   const bilgileriMuhurle = async () => {
     setLoading(true);
-    // Atama tarihinde değişiklik varsa yeni tarih at, yoksa eskisini koru
-    const guncelAtamaTarihi = (seciliAtanan !== ihbar?.atanan_personel || seciliGrup !== ihbar?.atanan_grup_id) 
-      ? new Date().toISOString() 
-      : ihbar?.atama_tarihi;
-
+    const guncelAtamaTarihi = (seciliAtanan !== ihbar?.atanan_personel || seciliGrup !== ihbar?.atanan_grup_id) ? new Date().toISOString() : ihbar?.atama_tarihi;
     const { error } = await supabase.from('ihbarlar').update({ 
       konu: editKonu.toUpperCase(), 
       aciklama: editAciklama, 
@@ -211,9 +206,17 @@ export default function IhbarDetay() {
       secilen_nesne_adi: secilenNesne?.nesne_adi || null, 
       secilen_nesne_kod: secilenNesne?.ifs_kod || null 
     }).eq('id', id);
-
     if (!error) { alert("KAYDEDİLDİ ✅"); fetchData(); }
     setLoading(false);
+  }
+
+  // 📍 HARİTA LİNKİ OLUŞTURUCU
+  const openMaps = () => {
+    if (ihbar?.guncel_konum && !ihbar.guncel_konum.includes('Reddedildi')) {
+      window.open(`https://www.google.com/maps?q=${ihbar.guncel_konum}`, '_blank');
+    } else {
+      alert("📍 KONUM VERİSİ BULUNAMADI!");
+    }
   }
 
   if (!ihbar) return <div className="p-10 text-white bg-[#0a0b0e] min-h-screen text-center italic font-black uppercase">YÜKLENİYOR...</div>
@@ -224,6 +227,12 @@ export default function IhbarDetay() {
         
         <div className="flex justify-between items-center bg-[#111318] p-5 rounded-2xl border border-gray-800 shadow-2xl">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl text-[10px]">← GERİ</button>
+          
+          {/* 📍 HARİTADA GÖR BUTONU */}
+          {ihbar.guncel_konum && (
+            <button onClick={openMaps} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[10px] animate-pulse">📍 HARİTADA GÖR</button>
+          )}
+          
           <div className="text-[10px] flex items-center gap-4">
              <span className="text-gray-500 italic uppercase font-black tracking-widest">ATANAN: {ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZDA'}</span>
           </div>
@@ -233,6 +242,13 @@ export default function IhbarDetay() {
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-[#1a1c23] p-6 md:p-8 rounded-[2.5rem] border border-gray-800 shadow-2xl">
               <h1 className="text-3xl md:text-4xl mb-4 tracking-tighter text-orange-500">{ihbar.ihbar_veren_ad_soyad}</h1>
+
+              {/* VARDİYA MODU UYARI BANDI */}
+              {isVardiyaHavuz && (
+                <div className="bg-orange-600/20 border border-orange-500 p-4 rounded-2xl mb-6 text-center">
+                  <p className="text-[10px] text-orange-500 animate-pulse font-black">🚨 BU BİR VARDİYA İHBARIDIR. DOĞRUDAN ÜSTLENEBİLİRSİNİZ.</p>
+                </div>
+              )}
 
               {ihbar.ihbar_veren_tel && (
                 <a href={`tel:${ihbar.ihbar_veren_tel}`} className="flex items-center justify-between bg-green-600 p-5 rounded-3xl mb-6 active:scale-95 transition-all">
@@ -244,6 +260,7 @@ export default function IhbarDetay() {
                 </a>
               )}
 
+              {/* YARDIMCI PERSONEL VE DİĞER ALANLAR AYNI KALDI */}
               <div className="bg-[#111318] p-6 rounded-3xl border border-orange-500/20 mb-8">
                 <p className="text-orange-500 text-[10px] mb-4 tracking-widest uppercase italic">👥 YARDIMCI PERSONEL (EKİP)</p>
                 <div className="flex flex-wrap gap-2 mb-4 font-black">
@@ -293,12 +310,13 @@ export default function IhbarDetay() {
                 )}
               </div>
 
+              {/* MALZEME BÖLÜMÜ AYNI KALDI */}
               {ihbar.durum === 'Calisiliyor' && ihbar.varis_tarihi && (
                 <div className="pt-8 border-t border-gray-800 space-y-6">
                   <p className="text-orange-500 text-[10px] tracking-widest font-black uppercase italic">📦 MALZEME KULLANIMI</p>
                   <div className="grid grid-cols-2 gap-4 font-black italic">
                     <div className="relative">
-                      <input type="text" placeholder={isSearching ? "ARANIYOR..." : "MALZEME ARA (MİN 3 HARF)..."} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black italic uppercase" value={malzemeSearch} onChange={e=>setMalzemeSearch(e.target.value)} />
+                      <input type="text" placeholder={isSearching ? "ARANIYOR..." : "MALZEME ARA..."} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black italic uppercase" value={malzemeSearch} onChange={e=>setMalzemeSearch(e.target.value)} />
                       {malzemeKatalog.length > 0 && (
                         <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-60 overflow-y-auto z-[100] shadow-2xl font-black italic uppercase">
                           {malzemeKatalog.map(m => ( <div key={m.id} onMouseDown={()=>{setSecilenMalzeme(m); setMalzemeSearch(m.malzeme_adi); setMalzemeKatalog([]);}} className="p-4 hover:bg-orange-600/20 border-b border-gray-800 cursor-pointer text-[10px]">{m.malzeme_adi}</div> ))}
@@ -354,7 +372,7 @@ export default function IhbarDetay() {
                 </div>
               ) : (
                 <button onClick={isiBaslat} disabled={!canStartJob || loading} className={`w-full py-12 rounded-[3rem] text-3xl transition-all shadow-2xl font-black italic uppercase ${canStartJob ? 'bg-orange-600 animate-pulse' : 'bg-gray-800 opacity-50'}`}>
-                  {loading ? 'GPS...' : (canStartJob ? '🚀 İŞE BAŞLA' : 'YETKİ YOK')}
+                  {loading ? 'GPS...' : (canStartJob ? (isVardiyaHavuz ? '🚀 İŞİ ÜSTLEN' : '🚀 İŞE BAŞLA') : 'YETKİ YOK')}
                 </button>
               )}
             </div>
