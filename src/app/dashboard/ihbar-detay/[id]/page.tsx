@@ -39,7 +39,6 @@ export default function IhbarDetay() {
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
 
-  // --- 🛰️ GPS KOORDİNAT YAKALAYICI ---
   const getGpsPosition = (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined' || !navigator.geolocation) return resolve(null);
@@ -49,7 +48,7 @@ export default function IhbarDetay() {
           console.warn("GPS Alınamadı:", err.message);
           resolve(null);
         },
-        { enableHighAccuracy: true, timeout: 3000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
       );
     });
   };
@@ -91,9 +90,8 @@ export default function IhbarDetay() {
       setSeciliGrup(ihbarRes.data.atanan_grup_id || ''); 
       setPersonelNotu(ihbarRes.data.personel_notu || '');
       
-      if (ihbarRes.data.secilen_nesne_adi && nRes.data) {
-        const bul = nRes.data.find(n => n.nesne_adi === ihbarRes.data.secilen_nesne_adi);
-        setSecilenNesne(bul || { nesne_adi: ihbarRes.data.secilen_nesne_adi, ifs_kod: 'KODSUZ' });
+      if (ihbarRes.data.secilen_nesne_adi) {
+        setSecilenNesne({ nesne_adi: ihbarRes.data.secilen_nesne_adi, ifs_kod: ihbarRes.data.secilen_nesne_kod || '' });
       }
     }
     setPersoneller(pRes.data?.filter(p => !p.role.toUpperCase().includes('ÇAĞRI')) || []); 
@@ -115,6 +113,7 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
+  // --- 1. NOKTA: İŞE BAŞLA ---
   const isiBaslat = async () => {
     setLoading(true);
     const pos = await getGpsPosition();
@@ -129,17 +128,30 @@ export default function IhbarDetay() {
     setLoading(false);
   }
 
-  // --- 🔔 BİLDİRİM GÖNDERME (ARRAY DESTEKLİ GÜNCELLENDİ) ---
+  // --- 2. NOKTA: ARIZA NOKTASINDAYIM ---
+  const arizaNoktasindayim = async () => {
+    setLoading(true);
+    const pos = await getGpsPosition();
+    const { error } = await supabase.from('ihbarlar').update({
+      varis_tarihi: new Date().toISOString(),
+      varis_enlem: pos?.lat || null,
+      varis_boylam: pos?.lng || null
+    }).eq('id', id);
+    if (error) alert(error.message); else { alert("VARIS MUHURLENDI!"); fetchData(); }
+    setLoading(false);
+  }
+
   const bildirimGonder = async (mesaj: string, roller: string[]) => {
     await supabase.from('bildirimler').insert({
       ihbar_id: id,
       mesaj: mesaj,
-      hedef_roller: roller, // Veritabanındaki text[] sütununa array olarak gider
+      hedef_roller: roller,
       is_read: false,
       islem_yapan_ad: userName || 'Sistem'
     });
   };
 
+  // --- 3. NOKTA: İŞİ KAPAT ---
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
@@ -154,7 +166,6 @@ export default function IhbarDetay() {
 
     if (!updateError) {
       const mesaj = stat === 'Tamamlandi' ? `✅ BİTTİ: ${ihbar.musteri_adi}` : `⚠️ DURDU: ${ihbar.musteri_adi}`;
-      // Rollere uygun anahtar kelimeler gönderiliyor
       const roller = stat === 'Tamamlandi' ? ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS', 'ADMİN'] : ['ÇAĞRI MERKEZİ', 'FORMEN', 'ADMİN'];
       await bildirimGonder(mesaj, roller);
       if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData();
@@ -166,8 +177,19 @@ export default function IhbarDetay() {
 
   const bilgileriMuhurle = async () => {
     setLoading(true);
-    await supabase.from('ihbarlar').update({ konu: editKonu.toUpperCase(), aciklama: editAciklama, atanan_personel: seciliAtanan || null, atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), ifs_is_emri_no: ifsNo, secilen_nesne_adi: secilenNesne?.nesne_adi || null }).eq('id', id);
-    alert("KAYDEDİLDİ"); fetchData(); setLoading(false);
+    const { error } = await supabase.from('ihbarlar').update({ 
+      konu: editKonu.toUpperCase(), 
+      aciklama: editAciklama, 
+      atanan_personel: seciliAtanan || null, 
+      atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), 
+      ifs_is_emri_no: ifsNo, 
+      secilen_nesne_adi: secilenNesne?.nesne_adi || null, // TEKNIK NESNE BURADA MÜHÜRLENİYOR
+      secilen_nesne_kod: secilenNesne?.ifs_kod || null
+    }).eq('id', id);
+    if (error) alert("Mühürleme Hatası: " + error.message);
+    else alert("KAYDEDİLDİ"); 
+    fetchData(); 
+    setLoading(false);
   }
 
   if (!ihbar) return <div className="p-10 text-white bg-[#0a0b0e] min-h-screen text-center italic font-black uppercase">YÜKLENİYOR...</div>
@@ -176,7 +198,6 @@ export default function IhbarDetay() {
     <div className="min-h-screen flex flex-col text-white font-sans bg-[#0a0b0e] font-black uppercase italic">
       <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 w-full relative z-10">
         
-        {/* ÜST BAR */}
         <div className="flex justify-between items-center bg-[#111318] p-5 rounded-2xl border border-gray-800 shadow-2xl">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl text-[10px]">← GERİ</button>
           <div className="text-[10px] flex items-center gap-4">
@@ -194,7 +215,6 @@ export default function IhbarDetay() {
             <div className="bg-[#1a1c23] p-8 rounded-[3rem] border border-gray-800 shadow-2xl">
               <h1 className="text-4xl mb-4 tracking-tighter">{ihbar.musteri_adi}</h1>
 
-              {/* 📞 HIZLI ARAMA BUTONU */}
               {ihbar.tel_no && (ihbar.durum === 'Calisiliyor' || ihbar.durum === 'İşlemde') && (
                 <div className="w-full mb-8">
                   <a 
@@ -276,6 +296,16 @@ export default function IhbarDetay() {
             <div className="bg-[#111318] p-8 rounded-[2.5rem] border border-orange-500/20 shadow-2xl font-black italic uppercase">
               {ihbar.durum === 'Calisiliyor' ? (
                 <div className="space-y-6">
+                   {/* 🛰️ YENİ EKlenen 2. NOKTA GPS BUTONU */}
+                  {!ihbar.varis_enlem && (
+                    <button onClick={arizaNoktasindayim} className="w-full bg-yellow-600 py-6 rounded-3xl text-sm shadow-xl font-black italic uppercase active:scale-95 transition-all border-b-4 border-yellow-800">📍 ARIZA NOKTASINDAYIM</button>
+                  )}
+                  {ihbar.varis_enlem && (
+                    <div className="bg-green-900/20 p-3 rounded-2xl border border-green-800/50 text-center">
+                      <p className="text-[8px] text-green-500">VARIS DOĞRULANDI ✅</p>
+                    </div>
+                  )}
+
                   <p className="text-[10px] text-gray-500 tracking-widest text-center italic font-black uppercase">İŞLEM RAPORU</p>
                   <textarea className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[11px] outline-none font-black italic uppercase" rows={4} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value.toUpperCase())} />
                   <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 py-6 rounded-3xl text-xl shadow-xl font-black italic uppercase active:scale-95 transition-all">🏁 İŞİ BİTİR</button>
