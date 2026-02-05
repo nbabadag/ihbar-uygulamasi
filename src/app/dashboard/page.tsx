@@ -82,7 +82,6 @@ export default function DashboardPage() {
       const toplamDakika = turkiyeZamani.getHours() * 60 + turkiyeZamani.getMinutes();
       const isMesaiSaatleri = toplamDakika >= 481 && toplamDakika <= 1004;
 
-      // 🛡️ KRİTİK DÜZELTME: Saha Personeli haricindekiler filtreye takılmaz.
       let filtered = ihbarData;
       const roleUpper = role.trim().toUpperCase();
 
@@ -119,7 +118,6 @@ export default function DashboardPage() {
     const cleanRole = role.trim();
     const roleUpperForB = cleanRole.toUpperCase();
     
-    // 🔔 BİLDİRİM ÇEKME: Liste yapısına uygun "ov" filtresi mühürlendi.
     const { data: bData, count } = await supabase
       .from('bildirimler')
       .select('*', { count: 'exact' })
@@ -172,7 +170,6 @@ export default function DashboardPage() {
                 }
             });
 
-        // 🚀 REALTIME: Her değişikliği dinler ve Admin dahil herkesin sayfasını tazeler.
         channel = supabase.channel(`dashboard-realtime-${user.id}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (payload: any) => { 
             if (payload.eventType === 'INSERT') playNotificationSound();
@@ -223,7 +220,8 @@ export default function DashboardPage() {
             <span className="text-[11px] font-black italic uppercase text-blue-400 tracking-tighter">🤖 AI ÖNERİSİ: {oneri}</span>
           </div>
         )}
-        <div className="font-black text-[13px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.musteri_adi}</div>
+        {/* 🛠️ KRİTİK REVİZYON: musteri_adi yerine ihbar_veren_ad_soyad kullanıldı */}
+        <div className="font-black text-[13px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.ihbar_veren_ad_soyad}</div>
         <div className="text-[11px] font-bold uppercase mb-3 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
         <div className="flex justify-between items-center text-[10px] font-black opacity-60 text-gray-300 font-black">
             <span className={`uppercase ${ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi ? 'text-orange-500' : 'text-blue-400 animate-pulse'}`}>👤 {atananIsmi}</span>

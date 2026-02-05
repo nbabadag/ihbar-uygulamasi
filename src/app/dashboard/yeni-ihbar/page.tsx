@@ -52,18 +52,30 @@ export default function YeniIhbar() {
 
     setLoading(true)
     
-    // 1. İhbarı Kaydet
-    const { data: yeniIhbar, error: ihbarError } = await supabase.from('ihbarlar').insert([
-      { 
-        musteri_adi: ihbarVeren, 
-        ihbar_veren_tel: telefon, 
-        konu: konu, 
-        aciklama: aciklama,
-        ifs_is_emri_no: ifsNo,
-        durum: 'Beklemede',
-        atanan_personel: atamaTuru === 'personel' ? (seciliAtanan || null) : null,
-        atanan_grup_id: atamaTuru === 'grup' ? (seciliAtanan || null) : null
-      }
+   // 1. İhbarı Kaydet
+ const { data: yeniIhbar, error: ihbarError } = await supabase.from('ihbarlar').insert([
+   { 
+     // ❌ musteri_adi: ihbarVeren, -> BU SÜTUN ARTIK 'ihbar_veren_ad_soyad' OLDU
+     ihbar_veren_ad_soyad: ihbarVeren, 
+     
+     // ✅ ihbar_veren_tel zaten doğru (SQL'de güncelledik)
+     ihbar_veren_tel: telefon, 
+     
+     konu: konu, 
+     aciklama: aciklama,
+     ifs_is_emri_no: ifsNo,
+     durum: 'Beklemede',
+     
+     // 🚀 YENİ EKLENEN/GÜNCELLENEN ALANLAR:
+     oncelik_durumu: 'NORMAL', // Varsayılan olarak ekledik
+     created_at: new Date().toISOString(), // İhbar Kayıt Tarih Saat
+     
+     atanan_personel: atamaTuru === 'personel' ? (seciliAtanan || null) : null,
+     atanan_grup_id: atamaTuru === 'grup' ? (seciliAtanan || null) : null,
+     
+     // Eğer atama yapıldıysa atama tarihini de mühürleyelim
+     atama_tarihi: seciliAtanan ? new Date().toISOString() : null
+   }
     ]).select().single()
     
     if (ihbarError) {
