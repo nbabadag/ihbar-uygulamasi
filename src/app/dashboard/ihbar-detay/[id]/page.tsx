@@ -39,13 +39,17 @@ export default function IhbarDetay() {
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   const canStartJob = !isCagriMerkezi && (ihbar?.atanan_personel === userId || userMemberGroups.includes(ihbar?.atanan_grup_id) || isAdmin || isMudur);
 
+  // --- 🛰️ GPS KOORDİNAT YAKALAYICI ---
   const getGpsPosition = (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined' || !navigator.geolocation) return resolve(null);
       navigator.geolocation.getCurrentPosition(
         (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => { resolve(null); },
-        { enableHighAccuracy: true, timeout: 5000 }
+        (err) => {
+          console.warn("GPS Alınamadı:", err.message);
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
       );
     });
   };
@@ -87,7 +91,7 @@ export default function IhbarDetay() {
       setSeciliGrup(ihbarRes.data.atanan_grup_id || ''); 
       setPersonelNotu(ihbarRes.data.personel_notu || '');
       
-      // Veritabanı sütun isimlerine göre nesneyi yükle
+      // Veritabanındaki isme göre Nesneyi state'e al
       if (ihbarRes.data.secilen_nesne_adi) {
         setSecilenNesne({ 
           nesne_adi: ihbarRes.data.secilen_nesne_adi, 
@@ -119,7 +123,7 @@ export default function IhbarDetay() {
     setLoading(true);
     const pos = await getGpsPosition();
     const { error } = await supabase.from('ihbarlar').update({ 
-      durum: 'Calisiliyor', // Tablodaki Check Constraint'e uygun
+      durum: 'Calisiliyor', 
       kabul_tarihi: new Date().toISOString(), 
       atanan_personel: userId,
       enlem: pos?.lat || null, 
@@ -170,26 +174,40 @@ export default function IhbarDetay() {
       const roller = stat === 'Tamamlandi' ? ['ÇAĞRI MERKEZİ', 'FORMEN', 'MÜHENDİS', 'ADMİN'] : ['ÇAĞRI MERKEZİ', 'FORMEN', 'ADMİN'];
       await bildirimGonder(mesaj, roller);
       if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData();
-    } else { alert("Hata: " + updateError.message); }
+    } else {
+      alert("Hata: " + updateError.message);
+    }
     setLoading(false);
   }
 
-  // --- ⚙️ KRİTİK MÜHÜRLER: TEKNİK NESNE KAYDI ---
+  // --- ⚙️ KRİTİK MÜHÜRLEME FONKSİYONU ---
   const bilgileriMuhurle = async () => {
     setLoading(true);
-    const { error } = await supabase.from('ihbarlar').update({ 
-      konu: editKonu.toUpperCase(), 
-      aciklama: editAciklama, 
-      atanan_personel: seciliAtanan || null, 
-      atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), 
-      ifs_is_emri_no: ifsNo, 
-      // Tablo sütun isimlerinle birebir eşleşme sağlandı
-      secilen_nesne_adi: secilenNesne?.nesne_adi || null, 
-      secilen_nesne_kod: secilenNesne?.ifs_kod || null
-    }).eq('id', id);
+    console.log("Mühürlenen Teknik Nesne:", secilenNesne); // Denetim için
 
-    if (error) alert("Mühürleme Hatası: " + error.message);
-    else { alert("KAYDEDİLDİ"); fetchData(); }
+    const { data, error } = await supabase
+      .from('ihbarlar')
+      .update({ 
+        konu: editKonu.toUpperCase(), 
+        aciklama: editAciklama, 
+        atanan_personel: seciliAtanan || null, 
+        atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), 
+        ifs_is_emri_no: ifsNo, 
+        // TABLO SÜTUNLARINA TAM UYUM
+        secilen_nesne_adi: secilenNesne?.nesne_adi || null, 
+        secilen_nesne_kod: secilenNesne?.ifs_kod || null
+      })
+      .eq('id', id)
+      .select(); // Değişikliği geri okumak için
+
+    if (error) {
+      console.error("SQL HATASI:", error.message);
+      alert("Mühürleme Hatası: " + error.message);
+    } else {
+      console.log("Veritabanına Yazılan Veri:", data);
+      alert("KAYDEDİLDİ"); 
+      await fetchData(); 
+    }
     setLoading(false);
   }
 
@@ -217,10 +235,33 @@ export default function IhbarDetay() {
             <div className="bg-[#1a1c23] p-8 rounded-[3rem] border border-gray-800 shadow-2xl">
               <h1 className="text-4xl mb-4 tracking-tighter">{ihbar.musteri_adi}</h1>
 
+              {/* 📞 HIZLI ARAMA */}
+              {ihbar.tel_no && (ihbar.durum === 'Calisiliyor' || ihbar.durum === 'Islemde') && (
+                <div className="w-full mb-8">
+                  <a 
+                    href={`tel:${ihbar.tel_no}`} 
+                    className="flex items-center justify-between bg-gradient-to-r from-green-600 to-green-500 p-6 rounded-[2rem] shadow-2xl active:scale-95 transition-all border-b-8 border-green-800"
+                  >
+                    <div className="flex items-center gap-5">
+                      <div className="bg-white/20 p-4 rounded-full animate-bounce">
+                        <span className="text-3xl">📞</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-white/70 uppercase tracking-[0.2em] italic">İHBAR YAPANIK ARA</span>
+                        <span className="text-2xl font-black tracking-tighter text-white">{ihbar.tel_no}</span>
+                      </div>
+                    </div>
+                    <div className="bg-white/10 px-6 py-3 rounded-2xl border border-white/20">
+                      <span className="text-xs font-black text-white uppercase italic">ARAMA YAP</span>
+                    </div>
+                  </a>
+                </div>
+              )}
+
               <div className="mb-6">{canEditIhbar ? ( <input className="w-full bg-black/50 border border-orange-500/30 p-4 rounded-2xl text-lg text-blue-400 outline-none" value={editKonu} onChange={e => setEditKonu(e.target.value)} /> ) : ( <p className="text-lg text-blue-400">{ihbar.konu}</p> )}</div>
               <div className="bg-black/30 p-6 rounded-3xl mb-8 border border-gray-800/50 italic">{canEditIhbar ? ( <textarea className="w-full bg-transparent border-none text-gray-300 text-sm outline-none resize-none" rows={3} value={editAciklama} onChange={e => setEditAciklama(e.target.value)} /> ) : ( <p className="text-gray-300 text-sm font-black italic">"{ihbar.aciklama}"</p> )}</div>
               
-              {/* ⚙️ TEKNİK NESNE SEÇİMİ */}
+              {/* ⚙️ TEKNİK NESNE & VARLIK */}
               <div className="bg-[#111318] p-6 rounded-3xl border border-blue-500/20 mb-8 font-black uppercase italic">
                 <p className="text-blue-400 text-[10px] mb-4 tracking-widest italic font-black uppercase">⚙️ TEKNİK NESNE & VARLIK</p>
                 {secilenNesne ? (
@@ -317,6 +358,7 @@ export default function IhbarDetay() {
           </div>
         </div>
       </div>
+      <style jsx>{` .scrollbar-hide::-webkit-scrollbar { display: none; } `}</style>
     </div>
   )
 }
