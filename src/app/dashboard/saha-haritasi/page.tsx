@@ -9,20 +9,23 @@ export default function SahaHaritasi() {
   const [filtre, setFiltre] = useState<'aktif' | 'tamamlandi'>('aktif')
   const [loading, setLoading] = useState(true)
 
-  const varsayilanKonum = "40.6922,29.5074";
+  const varsayilanKonum = "40.730046,29.505262";
 
-  // --- 🛰️ VERİ GETİRME (GÜNCELLENMİŞ SÜTUNLAR) ---
-  const veriGetir = async (signal?: AbortSignal) => {
-    const durumlar = filtre === 'aktif' ? ['Islemde', 'Calisiliyor', 'Durduruldu'] : ['Tamamlandi']
+  // --- 🛰️ VERİ GETİRME (YENİ ŞEMA VE 3 NOKTALI GPS) ---
+  const veriGetir = useCallback(async (signal?: AbortSignal) => {
+    // Aktif işler: Beklemede olmayan ama bitmemiş olanlar
+    const durumlar = filtre === 'aktif' 
+      ? ['Islemde', 'Calisiliyor', 'Durduruldu'] 
+      : ['Tamamlandi']
     
-    // SQL'e eklediğimiz enlem, boylam, bitis_enlem, bitis_boylam sütunlarını dahil ettik
     const { data, error } = await supabase
       .from('ihbarlar')
       .select(`
-        id, musteri_adi, konu, durum, 
+        id, ihbar_veren_ad_soyad, konu, durum, 
         enlem, boylam, 
+        varis_enlem, varis_boylam,
         bitis_enlem, bitis_boylam, 
-        konum_gecmisi, atanan_personel, 
+        atanan_personel, 
         profiles:atanan_personel (full_name)
       `)
       .in('durum', durumlar)
@@ -31,7 +34,7 @@ export default function SahaHaritasi() {
     if (!error && (!signal || !signal.aborted)) {
       setIsler(data || [])
     }
-  }
+  }, [filtre])
 
   useEffect(() => {
     const controller = new AbortController();
@@ -40,89 +43,91 @@ export default function SahaHaritasi() {
 
     const interval = setInterval(() => {
       veriGetir(controller.signal);
-    }, 60000); 
+    }, 30000); // 30 saniyede bir güncelle (Canlılık için)
 
     return () => {
       controller.abort();
       clearInterval(interval);
     };
-  }, [filtre])
+  }, [veriGetir])
 
-  // --- 🗺️ HARİTA GÜNCELLEME (FORMAT DÜZELTİLDİ) ---
-  const haritayiGuncelle = (is: any) => {
+  // --- 🗺️ 3 AŞAMALI KONUM GÖRÜNTÜLEME ---
+  const haritayiMuhurle = (is: any, asama: 'baslangic' | 'varis' | 'bitis') => {
     const frame = document.getElementById('saha-iframe') as HTMLIFrameElement;
     if (!frame) return;
 
-    if (filtre === 'aktif') {
-      // Aktif işlerde enlem ve boylamı birleştirip gönderiyoruz
-      if (is.enlem && is.boylam) {
-        const konumUrl = `${is.enlem},${is.boylam}`;
-        frame.src = `https://maps.google.com/maps?q=${konumUrl}&t=k&z=19&ie=UTF8&iwloc=&output=embed`;
-      } else {
-        alert("BU İŞ İÇİN HENÜZ CANLI KONUM VERİSİ ALINMAMIŞ.");
-      }
-    } else {
-      // Biten işlerde bitis koordinatlarını göster
-      const bitisEnlem = is.bitis_enlem || is.enlem;
-      const bitisBoylam = is.bitis_boylam || is.boylam;
+    let lat, lng;
 
-      if (bitisEnlem && bitisBoylam) {
-        const konumUrl = `${bitisEnlem},${bitisBoylam}`;
-        frame.src = `https://maps.google.com/maps?q=${konumUrl}&t=k&z=19&ie=UTF8&iwloc=&output=embed`;
-      }
+    switch(asama) {
+      case 'baslangic':
+        lat = is.enlem; lng = is.boylam;
+        break;
+      case 'varis':
+        lat = is.varis_enlem; lng = is.varis_boylam;
+        break;
+      case 'bitis':
+        lat = is.bitis_enlem; lng = is.bitis_boylam;
+        break;
+    }
+
+    if (lat && lng) {
+      const konumUrl = `${lat},${lng}`;
+      // Google Maps Embed URL düzeltildi
+      frame.src = `https://maps.google.com/maps?q=${konumUrl}&t=k&z=19&ie=UTF8&iwloc=&output=embed`;
+    } else {
+      alert(`BU İŞİN ${asama.toUpperCase()} MÜHÜRÜ HENÜZ ALINMAMIŞ.`);
     }
   }
 
   return (
     <div className="h-screen flex flex-col bg-[#020617] text-white font-sans uppercase italic font-black">
       {/* ÜST PANEL */}
-      <div className="p-4 bg-slate-900/50 backdrop-blur-md border-b border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="p-4 bg-slate-900/50 backdrop-blur-md border-b border-white/10 flex flex-col md:flex-row justify-between items-center gap-4 relative z-20">
         <div className="flex items-center gap-4">
-          <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-4 py-2 rounded-xl text-[10px]">← GERİ</button>
+          <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-4 py-2 rounded-xl text-[10px] active:scale-95 shadow-lg shadow-orange-900/20">← GERİ</button>
           <div>
-            <h1 className="text-sm tracking-tighter">SAHA 360 // OPERASYON MERKEZİ</h1>
-            <p className="text-[8px] text-blue-400">CANLI / KAYITLI İzleme Sistemi</p>
+            <h1 className="text-sm tracking-tighter">SAHA 360 // DENETİM MASASI</h1>
+            <p className="text-[8px] text-blue-400">GPS MÜHÜR TAKİP SİSTEMİ</p>
           </div>
         </div>
 
         <div className="flex bg-black/40 p-1 rounded-2xl border border-white/5">
-          <button onClick={() => setFiltre('aktif')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'aktif' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>🛰️ İŞLEMDE / DURDURULAN</button>
-          <button onClick={() => setFiltre('tamamlandi')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'tamamlandi' ? 'bg-green-600 text-white' : 'text-gray-500'}`}>🏁 TAMAMLANAN</button>
+          <button onClick={() => setFiltre('aktif')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'aktif' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500'}`}>🛰️ AKTİF OPERASYONLAR</button>
+          <button onClick={() => setFiltre('tamamlandi')} className={`px-6 py-2 rounded-xl text-[10px] transition-all ${filtre === 'tamamlandi' ? 'bg-green-600 text-white shadow-lg' : 'text-gray-500'}`}>🏁 TAMAMLANAN GÖREVLER</button>
         </div>
       </div>
 
       <div className="flex-1 relative flex flex-col md:flex-row overflow-hidden">
         {/* SOL LİSTE */}
-        <div className="w-full md:w-80 bg-slate-900/80 border-r border-white/5 overflow-y-auto p-4 custom-scrollbar z-10">
-          <p className="text-[9px] text-gray-500 mb-4 underline decoration-blue-500">Görev Listesi</p>
+        <div className="w-full md:w-96 bg-slate-900/90 border-r border-white/5 overflow-y-auto p-4 custom-scrollbar z-10 shadow-2xl">
+          <p className="text-[9px] text-gray-500 mb-4 tracking-widest">GÖREV VE MÜHÜR LİSTESİ</p>
           {loading ? (
              <div className="animate-pulse space-y-4">
-               {[1,2,3].map(i => <div key={i} className="h-24 bg-white/5 rounded-3xl"></div>)}
+               {[1,2,3,4].map(i => <div key={i} className="h-32 bg-white/5 rounded-3xl"></div>)}
              </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {isler.map((is) => (
-                <div key={is.id} className="bg-slate-800/50 border border-white/10 p-4 rounded-[2rem] hover:border-blue-500 transition-all">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className={`text-[8px] px-2 py-0.5 rounded ${is.durum === 'Calisiliyor' ? 'bg-blue-600 animate-pulse' : 'bg-slate-700'}`}>{is.durum}</span>
-                    <span className="text-[8px] text-gray-500">#{is.id}</span>
+                <div key={is.id} className="bg-slate-800/40 border border-white/5 p-5 rounded-[2rem] hover:border-orange-500/50 transition-all shadow-xl">
+                  <div className="flex justify-between items-start mb-3">
+                    <span className={`text-[8px] px-3 py-1 rounded-full font-black ${is.durum === 'Calisiliyor' ? 'bg-blue-600 animate-pulse' : is.durum === 'Durduruldu' ? 'bg-red-600' : 'bg-green-600'}`}>
+                      {is.durum}
+                    </span>
+                    <span className="text-[9px] text-gray-500">ID: #{is.id}</span>
                   </div>
-                  <h3 className="text-xs truncate mb-1">{is.musteri_adi}</h3>
-                  <p className="text-[10px] text-gray-400 mb-3 truncate">{is.konu}</p>
-                  <p className="text-[9px] text-blue-400 mb-4">👤 {is.profiles?.full_name || 'Bilinmiyor'}</p>
+                  <h3 className="text-[13px] truncate mb-1 text-orange-500">{is.ihbar_veren_ad_soyad}</h3>
+                  <p className="text-[10px] text-gray-400 mb-3 line-clamp-1 italic">"{is.konu}"</p>
+                  <p className="text-[9px] text-blue-400 mb-4 border-b border-white/5 pb-2">👤 {is.profiles?.full_name || 'ATANMADI'}</p>
                   
-                  {(is.enlem && is.boylam) ? (
-                    <button 
-                      onClick={() => haritayiGuncelle(is)} 
-                      className={`w-full py-3 rounded-2xl text-[10px] text-white shadow-lg transition-all ${filtre === 'aktif' ? 'bg-blue-600' : 'bg-green-600'}`}
-                    >
-                      {filtre === 'aktif' ? '📍 KONUMU GÖR' : '🗺️ KONUMU GÖR'}
-                    </button>
-                  ) : (
-                    <div className="text-[8px] text-red-500/70 italic text-center py-2 border border-red-500/10 rounded-xl">Konum Verisi Yok</div>
-                  )}
+                  {/* 📍 3 NOKTALI GPS SEÇİCİ */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button onClick={() => haritayiMuhurle(is, 'baslangic')} className="bg-slate-700/50 hover:bg-blue-600 p-2 rounded-xl text-[7px] transition-all">1. BAŞLA</button>
+                    <button onClick={() => haritayiMuhurle(is, 'varis')} className="bg-slate-700/50 hover:bg-yellow-600 p-2 rounded-xl text-[7px] transition-all">2. VARDI</button>
+                    <button onClick={() => haritayiMuhurle(is, 'bitis')} className="bg-slate-700/50 hover:bg-green-600 p-2 rounded-xl text-[7px] transition-all">3. BİTTİ</button>
+                  </div>
                 </div>
               ))}
+              {isler.length === 0 && <div className="text-center p-10 text-[10px] text-gray-600 italic">BU FİLTREDE KAYIT BULUNAMADI.</div>}
             </div>
           )}
         </div>
@@ -140,6 +145,12 @@ export default function SahaHaritasi() {
           ></iframe>
         </div>
       </div>
+
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+      `}</style>
     </div>
   )
 }

@@ -15,7 +15,6 @@ export default function IhbarDetay() {
   const [nesneSearch, setNesneSearch] = useState('')
   const [secilenNesne, setSecilenNesne] = useState<any>(null)
   
-  // 📦 MALZEME STATELERİ (65K+ İçin Optimize Edildi)
   const [malzemeKatalog, setMalzemeKatalog] = useState<any[]>([])
   const [kullanilanlar, setKullanilanlar] = useState<any[]>([])
   const [malzemeSearch, setMalzemeSearch] = useState('')
@@ -85,6 +84,7 @@ export default function IhbarDetay() {
       setSeciliGrup(d.atanan_grup_id || ''); 
       setPersonelNotu(d.personel_notu || '');
       setYardimcilar(d.yardimcilar || []);
+      // 🛠️ FETCH DÜZELTME: Kayıtlı nesneyi state'e yükle
       if (d.secilen_nesne_adi) {
         setSecilenNesne({ nesne_adi: d.secilen_nesne_adi, ifs_kod: d.secilen_nesne_kod || '' });
       }
@@ -95,7 +95,6 @@ export default function IhbarDetay() {
     setNesneListesi(nRes.data || []);
   }, [id])
 
-  // 🚀 65.000 MALZEME İÇİN AKILLI ARAMA MOTORU
   useEffect(() => {
     const searchDelay = setTimeout(async () => {
       if (malzemeSearch.length < 3) { setMalzemeKatalog([]); return; }
@@ -160,8 +159,28 @@ export default function IhbarDetay() {
 
   const bilgileriMuhurle = async () => {
     setLoading(true);
-    const { error } = await supabase.from('ihbarlar').update({ konu: editKonu.toUpperCase(), aciklama: editAciklama, atanan_personel: seciliAtanan || null, atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), ifs_is_emri_no: ifsNo, secilen_nesne_adi: secilenNesne?.nesne_adi || null, secilen_nesne_kod: secilenNesne?.ifs_kod || null }).eq('id', id);
-    if (!error) { alert("KAYDEDİLDİ"); fetchData(); }
+    // 🛠️ UPDATE DÜZELTME: Atama tarihi ve Teknik Nesne bilgilerini ekle
+    const guncelAtamaTarihi = (seciliAtanan !== ihbar?.atanan_personel || seciliGrup !== ihbar?.atanan_grup_id) 
+      ? new Date().toISOString() 
+      : ihbar?.atama_tarihi;
+
+    const { error } = await supabase.from('ihbarlar').update({ 
+      konu: editKonu.toUpperCase(), 
+      aciklama: editAciklama, 
+      atanan_personel: seciliAtanan || null, 
+      atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), 
+      atama_tarihi: guncelAtamaTarihi, // Atama tarihini mühürle
+      ifs_is_emri_no: ifsNo, 
+      secilen_nesne_adi: secilenNesne?.nesne_adi || null, // Teknik Nesne Adı mühürle
+      secilen_nesne_kod: secilenNesne?.ifs_kod || null    // Teknik Nesne Kodu mühürle
+    }).eq('id', id);
+
+    if (!error) { 
+      alert("KAYDEDİLDİ ✅"); 
+      fetchData(); 
+    } else {
+      alert("HATA: " + error.message);
+    }
     setLoading(false);
   }
 
@@ -193,7 +212,6 @@ export default function IhbarDetay() {
                 </a>
               )}
 
-              {/* 👥 YARDIMCI PERSONEL (Her zaman aktif) */}
               <div className="bg-[#111318] p-6 rounded-3xl border border-orange-500/20 mb-8">
                 <p className="text-orange-500 text-[10px] mb-4 tracking-widest uppercase italic">👥 YARDIMCI PERSONEL (EKİP)</p>
                 <div className="flex flex-wrap gap-2 mb-4 font-black">
@@ -232,14 +250,13 @@ export default function IhbarDetay() {
                     <input type="text" placeholder="ARA..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black italic" value={nesneSearch} onChange={e => setNesneSearch(e.target.value)} />
                     {nesneSearch && (
                       <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-40 overflow-y-auto z-50 font-black">
-                        {nesneListesi.filter(n => n.nesne_adi?.toLowerCase().includes(nesneSearch.toLowerCase())).map(n => ( <div key={n.id} onMouseDown={() => { setSecilenNesne(n); setNesneSearch(''); }} className="p-4 hover:bg-blue-600/20 cursor-pointer text-[10px] border-b border-gray-800">{n.nesne_adi} [{n.ifs_kod}]</div> ))}
+                        {nesneListesi.filter(n => n.nesne_adi?.toLowerCase().includes(nesneSearch.toLowerCase())).map(n => ( <div key={n.id} onMouseDown={() => { setSecilenNesne({ nesne_adi: n.nesne_adi, ifs_kod: n.ifs_kod }); setNesneSearch(''); }} className="p-4 hover:bg-blue-600/20 cursor-pointer text-[10px] border-b border-gray-800">{n.nesne_adi} [{n.ifs_kod}]</div> ))}
                       </div>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* 📦 MALZEME KULLANIMI (Varış Yapılmışsa Görünür) */}
               {ihbar.durum === 'Calisiliyor' && ihbar.varis_tarihi && (
                 <div className="pt-8 border-t border-gray-800 space-y-6">
                   <p className="text-orange-500 text-[10px] tracking-widest font-black uppercase italic">📦 MALZEME KULLANIMI</p>
