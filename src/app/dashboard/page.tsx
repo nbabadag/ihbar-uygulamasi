@@ -195,23 +195,27 @@ export default function DashboardPage() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/'); }
 
-  const JobCard = ({ ihbar }: { ihbar: any }) => {
+const JobCard = ({ ihbar }: { ihbar: any }) => {
     const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
     const d = (ihbar.durum || '').toLowerCase();
     
     // --- 🛰️ SAHA DURUM MANTIK MÜHÜRÜ ---
     let sahaDurumYazisi = "ATAMA BEKLİYOR";
     let durumRengi = "text-blue-400";
+    let durumIcon = "📡";
 
-    if (ihbar.kapatma_tarihi) {
+    if (ihbar.kapatma_tarihi || d.includes('tamamlandi')) {
       sahaDurumYazisi = "✅ İŞ TAMAMLANDI";
       durumRengi = "text-green-500";
+      durumIcon = "✔️";
     } else if (ihbar.varis_tarihi) {
       sahaDurumYazisi = "🔧 ARIZA NOKTASINDA (ÇALIŞIYOR)";
       durumRengi = "text-yellow-500 animate-pulse";
+      durumIcon = "🔨";
     } else if (ihbar.kabul_tarihi) {
       sahaDurumYazisi = "🚛 EKİP YOLDA / İŞE BAŞLADI";
       durumRengi = "text-orange-500";
+      durumIcon = "🚀";
     }
 
     const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && d.includes('beklemede');
@@ -222,7 +226,7 @@ export default function DashboardPage() {
     return (
       <div onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className={`p-4 rounded-2xl shadow-xl border mb-3 backdrop-blur-md transition-all active:scale-95 relative z-10 ${isDurduruldu ? 'bg-red-900/10 border-red-500/50' : isVardiya ? 'bg-orange-600/20 border-orange-500 animate-pulse' : 'bg-[#1a1c23]/80 border-gray-700/50 hover:border-orange-500/50'}`}>
         
-        {/* ÜST BİLGİ */}
+        {/* ÜST BİLGİ (IFS ve Saat) */}
         <div className="flex justify-between items-start mb-1 font-black">
           <span className={`text-[10px] italic font-black tracking-widest uppercase ${isDurduruldu ? 'text-red-500' : isVardiya ? 'text-white' : 'text-orange-400'}`}>
             {isDurduruldu ? '⚠️ DURDURULDU' : isVardiya ? '🚨 VARDİYA İHBARI' : `#${ihbar.ifs_is_emri_no || 'IFS YOK'}`}
@@ -230,20 +234,30 @@ export default function DashboardPage() {
           <span className="text-[9px] text-gray-500 font-bold font-black">{new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</span>
         </div>
 
-        {/* AI ÖNERİSİ (Görseldeki gibi) */}
-        {oneri && (
-          <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded bg-blue-600/10 border border-blue-500/20 w-fit">
-            <span className="text-[11px] font-black italic uppercase text-blue-400 tracking-tighter">🤖 AI ÖNERİSİ: {oneri}</span>
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2 mb-2">
+          {/* AI ÖNERİSİ */}
+          {oneri && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-600/10 border border-blue-500/20 w-fit">
+              <span className="text-[10px] font-black italic uppercase text-blue-400 tracking-tighter">🤖 AI ÖNERİSİ: {oneri}</span>
+            </div>
+          )}
+
+          {/* ⚙️ TEKNİK NESNE ETİKETİ (Hem aktif hem tamamlananlarda görünür) */}
+          {ihbar.secilen_nesne_adi && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-orange-600/10 border border-orange-500/30 w-fit">
+              <span className="text-[10px] font-black italic uppercase text-orange-500 tracking-tighter">⚙️ {ihbar.secilen_nesne_adi}</span>
+            </div>
+          )}
+        </div>
 
         {/* İHBAR VEREN VE KONU */}
         <div className="font-black text-[13px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.ihbar_veren_ad_soyad}</div>
         <div className="text-[11px] font-bold uppercase mb-2 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
 
-        {/* 📢 YENİ SAHA DURUM BİLGİSİ (EKLENEN KISIM) */}
-        <div className={`text-[9px] font-black italic uppercase mb-3 ${durumRengi} border-l-2 border-current pl-2`}>
-          {sahaDurumYazisi}
+        {/* 📢 SAHA DURUM YAZISI (Paylaştığınız görsellerdeki yeşil/sarı bar yapısı) */}
+        <div className={`text-[9px] font-black italic uppercase mb-3 ${durumRengi} border-l-2 border-current pl-2 flex items-center gap-2`}>
+          <span>{durumIcon}</span>
+          <span>{sahaDurumYazisi}</span>
         </div>
 
         {/* ALT BİLGİ */}
