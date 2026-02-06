@@ -12,6 +12,10 @@ export default function Raporlar() {
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ total: 0, avgTime: 0, bottleneck: '', efficiency: 0 })
+  
+  // 📅 Tarih Filtreleme State'leri
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
 
   useEffect(() => { fetchStats() }, [])
 
@@ -35,10 +39,21 @@ export default function Raporlar() {
     setLoading(false);
   }
 
-  // 📥 EXCEL (CSV) İNDİRME FONKSİYONU
+  // 📥 TARİH FİLTRELİ EXCEL (CSV) İNDİRME
   const excelIndir = () => {
+    let filtrelenmişData = data;
+    
+    if (startDate && endDate) {
+      filtrelenmişData = data.filter(i => {
+        const d = new Date(i.created_at).getTime();
+        return d >= new Date(startDate).getTime() && d <= new Date(endDate).setHours(23,59,59);
+      });
+    }
+
+    if (filtrelenmişData.length === 0) return alert("Seçilen tarih aralığında veri bulunamadı.");
+
     const headers = ["IS_EMRI_NO", "KONU", "NESNE", "ISTASYON", "BASLANGIC", "BITIS", "SURE_DK", "DURUM"];
-    const rows = data.map(i => [
+    const rows = filtrelenmişData.map(i => [
       i.ifs_is_emri_no, i.konu, i.secilen_nesne_adi, i.is_istasyonu, 
       i.kabul_tarihi, i.kapama_tarihi, i.calisma_suresi_dakika, i.durum
     ]);
@@ -48,7 +63,7 @@ export default function Raporlar() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Saha360_Rapor_${new Date().toLocaleDateString()}.csv`);
+    link.setAttribute("download", `Saha360_Rapor_${startDate || 'Tumu'}_${endDate || ''}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -75,7 +90,9 @@ export default function Raporlar() {
     z: e.count
   })).sort((a,b) => b.y - a.y).slice(0, 25);
 
-  // 🛡️ DÜZELTİLMİŞ CUSTOM TOOLTIP (Boş kutu hatası giderildi)
+  // 🏆 LİSTE İÇİN SIRALAMA MANTIĞI (En Çok Zaman Kaybettiren 10 Ekipman)
+  const top10Equipment = [...scatterData].sort((a,b) => b.y - a.y).slice(0, 10);
+
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const item = payload[0].payload;
@@ -98,33 +115,42 @@ export default function Raporlar() {
     <div className="min-h-screen bg-[#06070a] text-white p-6 md:p-12 font-black uppercase italic">
       <div className="max-w-[1600px] mx-auto space-y-10">
         
-        {/* ÜST PANEL */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6 border-b-2 border-orange-500 pb-8">
+        {/* ÜST PANEL & TARİH FİLTRESİ */}
+        <div className="flex flex-col lg:flex-row justify-between items-center gap-6 border-b-2 border-orange-500 pb-8">
           <h1 className="text-4xl tracking-tighter">SAHA <span className="text-orange-500 text-outline">ANALİTİK</span></h1>
-          <div className="flex gap-4">
-            <button onClick={excelIndir} className="bg-green-600 px-6 py-3 rounded-full text-[10px] hover:bg-green-700 transition-all flex items-center gap-2">
+          
+          <div className="flex flex-wrap items-center gap-4 bg-[#111318] p-4 rounded-3xl border border-gray-800">
+            <div className="flex flex-col">
+              <span className="text-[8px] text-gray-500 ml-2">BAŞLANGIÇ</span>
+              <input type="date" className="bg-transparent text-[10px] outline-none border-none text-white" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            </div>
+            <div className="flex flex-col border-l border-gray-700 pl-4">
+              <span className="text-[8px] text-gray-500 ml-2">BİTİŞ</span>
+              <input type="date" className="bg-transparent text-[10px] outline-none border-none text-white" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+            <button onClick={excelIndir} className="bg-green-600 px-6 py-2 rounded-2xl text-[10px] hover:bg-green-700 transition-all ml-4">
               📊 EXCEL İNDİR
             </button>
-            <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-3 rounded-full text-[10px]">DASHBOARD</button>
+            <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2 rounded-2xl text-[10px]">DASHBOARD</button>
           </div>
         </div>
 
         {/* KPI KARTLARI */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-orange-600">
-            <p className="text-[10px] text-gray-500 mb-2">TOPLAM İŞ</p>
+            <p className="text-[10px] text-gray-500 mb-2 font-black">TOPLAM İŞ</p>
             <h2 className="text-5xl text-orange-500 tracking-tighter">{stats.total}</h2>
           </div>
           <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-blue-500">
-            <p className="text-[10px] text-gray-500 mb-2">MTTR (ORT. TAMİR)</p>
+            <p className="text-[10px] text-gray-500 mb-2 font-black">MTTR (ORT. TAMİR)</p>
             <h2 className="text-5xl text-blue-500 tracking-tighter">{stats.avgTime} DK</h2>
           </div>
           <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-green-500">
-            <p className="text-[10px] text-gray-500 mb-2">VERİMLİLİK</p>
+            <p className="text-[10px] text-gray-500 mb-2 font-black">VERİMLİLİK</p>
             <h2 className="text-5xl text-green-500 tracking-tighter">%{stats.efficiency}</h2>
           </div>
           <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-red-500">
-            <p className="text-[10px] text-gray-500 mb-2">DARBOĞAZ</p>
+            <p className="text-[10px] text-gray-500 mb-2 font-black">DARBOĞAZ</p>
             <h2 className="text-sm text-red-500 leading-none truncate">{stats.bottleneck}</h2>
           </div>
         </div>
@@ -132,7 +158,7 @@ export default function Raporlar() {
         {/* GRAFİKLER */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 bg-[#111318] p-10 rounded-[3rem] border border-gray-800">
-            <h3 className="text-xs mb-10 border-l-4 border-orange-500 pl-4">ATÖLYE YÜKÜ</h3>
+            <h3 className="text-xs mb-10 border-l-4 border-orange-500 pl-4 tracking-widest font-black">ATÖLYE YÜKÜ</h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={workshopData} layout="vertical">
                 <XAxis type="number" hide />
@@ -146,7 +172,7 @@ export default function Raporlar() {
           </div>
 
           <div className="lg:col-span-2 bg-[#111318] p-10 rounded-[3rem] border border-gray-800 h-[450px]">
-            <h3 className="text-xs mb-10 border-l-4 border-blue-500 pl-4">DARBOĞAZ ANALİZİ (ADET VS SÜRE)</h3>
+            <h3 className="text-xs mb-10 border-l-4 border-blue-500 pl-4 tracking-widest font-black">DARBOĞAZ ANALİZİ (ADET VS SÜRE)</h3>
             <ResponsiveContainer width="100%" height="80%">
               <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
                 <CartesianGrid stroke="#222" vertical={false} />
@@ -163,6 +189,27 @@ export default function Raporlar() {
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* 🏆 KRİTİK 10 EKİPMAN SIRALAMASI (ÖNCEKİ MANTIK) */}
+        <div className="bg-[#111318] p-10 rounded-[3rem] border border-gray-800">
+          <h3 className="text-xs mb-8 border-l-4 border-red-600 pl-4 tracking-widest font-black">EN ÇOK ZAMAN KAYBETTİREN 10 VARLIK (KRİTİK)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            {top10Equipment.map((e, idx) => (
+              <div key={idx} className="bg-black/50 p-6 rounded-[2rem] border border-gray-900 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 bg-red-600 text-black px-3 py-1 text-[8px] rounded-bl-xl font-black">#{idx + 1}</div>
+                <p className="text-[10px] text-gray-500 mb-4 h-8 overflow-hidden font-black uppercase italic">{e.name}</p>
+                <div className="flex justify-between items-end">
+                  <div className="text-2xl font-black">{e.x} <span className="text-[8px] text-gray-700">İŞ</span></div>
+                  <div className="text-right">
+                    <p className="text-[8px] text-gray-400">ORT. SÜRE</p>
+                    <p className="text-sm text-orange-500 font-black">{e.y} DK</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
       </div>
     </div>
   )
