@@ -196,78 +196,123 @@ export default function DashboardPage() {
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/'); }
 
 const JobCard = ({ ihbar }: { ihbar: any }) => {
-    const diff = (now.getTime() - new Date(ihbar.created_at).getTime()) / 60000
+    // --- ⏱️ SÜRE HESAPLAMA MANTIĞI (FİİLİ ÇALIŞMA ODAKLI) ---
+    const olusturmaTarihi = new Date(ihbar.created_at).getTime();
+    const kabulTarihi = ihbar.kabul_tarihi ? new Date(ihbar.kabul_tarihi).getTime() : null;
+    const kapatmaTarihi = ihbar.kapatma_tarihi ? new Date(ihbar.kapatma_tarihi).getTime() : null;
+
+    let calisilanDakika = 0;
+    if (kapatmaTarihi && kabulTarihi) {
+      calisilanDakika = Math.floor((kapatmaTarihi - kabulTarihi) / 60000);
+    } else if (kabulTarihi) {
+      calisilanDakika = Math.floor((now.getTime() - kabulTarihi) / 60000);
+    } else {
+      calisilanDakika = Math.floor((now.getTime() - olusturmaTarihi) / 60000);
+    }
+
     const d = (ihbar.durum || '').toLowerCase();
     
-    // --- 🛰️ SAHA DURUM MANTIK MÜHÜRÜ ---
-    let sahaDurumYazisi = "ATAMA BEKLİYOR";
+    // --- 🚨 RENK VE DURUM MANTIĞI ---
     let durumRengi = "text-blue-400";
     let durumIcon = "📡";
+    let solCizgi = "border-l-blue-500"; 
+    let glowClass = "group-hover:shadow-[0_0_15px_rgba(59,130,246,0.3)]";
 
     if (ihbar.kapatma_tarihi || d.includes('tamamlandi')) {
-      sahaDurumYazisi = "✅ İŞ TAMAMLANDI";
       durumRengi = "text-green-500";
       durumIcon = "✔️";
+      solCizgi = "border-l-green-600";
+      glowClass = "group-hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]";
     } else if (ihbar.varis_tarihi) {
-      sahaDurumYazisi = "🔧 ARIZA NOKTASINDA (ÇALIŞIYOR)";
-      durumRengi = "text-yellow-500 animate-pulse";
+      durumRengi = "text-yellow-500";
       durumIcon = "🔨";
+      solCizgi = "border-l-yellow-500 animate-pulse";
+      glowClass = "group-hover:shadow-[0_0_15px_rgba(234,179,8,0.4)]";
     } else if (ihbar.kabul_tarihi) {
-      sahaDurumYazisi = "🚛 EKİP YOLDA / İŞE BAŞLADI";
       durumRengi = "text-orange-500";
       durumIcon = "🚀";
+      solCizgi = "border-l-orange-500";
+      glowClass = "group-hover:shadow-[0_0_15px_rgba(249,115,22,0.4)]";
     }
 
     const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && d.includes('beklemede');
     const isDurduruldu = d.includes('durduruldu');
     const oneri = aiOneriGetir(`${ihbar.konu} ${ihbar.aciklama || ''}`);
-    const atananIsmi = ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZ (ATANMADI)';
+    const atananIsmi = ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZ';
 
     return (
-      <div onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className={`p-4 rounded-2xl shadow-xl border mb-3 backdrop-blur-md transition-all active:scale-95 relative z-10 ${isDurduruldu ? 'bg-red-900/10 border-red-500/50' : isVardiya ? 'bg-orange-600/20 border-orange-500 animate-pulse' : 'bg-[#1a1c23]/80 border-gray-700/50 hover:border-orange-500/50'}`}>
+      <div 
+        onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} 
+        className={`group relative p-4 rounded-[1.5rem] border-l-4 border bg-[#1a1c23]/60 backdrop-blur-xl mb-4 transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-2xl 
+          ${solCizgi} ${glowClass} ${isDurduruldu ? 'border-red-500/50 bg-red-900/5 opacity-80' : 'border-gray-800/40'}`}
+      >
         
-        {/* ÜST BİLGİ (IFS ve Saat) */}
-        <div className="flex justify-between items-start mb-1 font-black">
-          <span className={`text-[10px] italic font-black tracking-widest uppercase ${isDurduruldu ? 'text-red-500' : isVardiya ? 'text-white' : 'text-orange-400'}`}>
-            {isDurduruldu ? '⚠️ DURDURULDU' : isVardiya ? '🚨 VARDİYA İHBARI' : `#${ihbar.ifs_is_emri_no || 'IFS YOK'}`}
+        {/* 1. SATIR: ÜST BİLGİ & SAAT */}
+        <div className="flex justify-between items-center mb-3">
+          <div className="flex items-center gap-2">
+            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest 
+              ${isVardiya ? 'bg-orange-600 text-white animate-bounce' : 'bg-gray-800 text-orange-500'}`}>
+              {isDurduruldu ? '⚠️ DURDURULDU' : isVardiya ? '🚨 VARDİYA' : `#${ihbar.ifs_is_emri_no || 'IFS YOK'}`}
+            </span>
+          </div>
+          <span className="text-[9px] text-gray-500 font-black italic">
+            {new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}
           </span>
-          <span className="text-[9px] text-gray-500 font-bold font-black">{new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}</span>
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-2">
-          {/* AI ÖNERİSİ */}
-          {oneri && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-600/10 border border-blue-500/20 w-fit">
-              <span className="text-[10px] font-black italic uppercase text-blue-400 tracking-tighter">🤖 AI ÖNERİSİ: {oneri}</span>
-            </div>
-          )}
-
-          {/* ⚙️ TEKNİK NESNE ETİKETİ (Hem aktif hem tamamlananlarda görünür) */}
+        {/* 2. SATIR: ⚙️ TEKNİK NESNE & 🤖 AI MÜHÜRLERİ (GERİ GELDİ) */}
+        <div className="flex flex-wrap gap-2 mb-3">
           {ihbar.secilen_nesne_adi && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-orange-600/10 border border-orange-500/30 w-fit">
-              <span className="text-[10px] font-black italic uppercase text-orange-500 tracking-tighter">⚙️ {ihbar.secilen_nesne_adi}</span>
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-orange-600/10 border border-orange-500/30">
+              <span className="text-[8px] font-black uppercase text-orange-500 italic">⚙️ {ihbar.secilen_nesne_adi}</span>
+            </div>
+          )}
+          {oneri && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-600/10 border border-blue-500/20">
+              <span className="text-[8px] font-black uppercase text-blue-400 italic">🤖 AI: {oneri}</span>
             </div>
           )}
         </div>
 
-        {/* İHBAR VEREN VE KONU */}
-        <div className="font-black text-[13px] uppercase leading-tight tracking-tighter text-gray-100 mb-1">{ihbar.ihbar_veren_ad_soyad}</div>
-        <div className="text-[11px] font-bold uppercase mb-2 truncate italic text-gray-400 font-black">{ihbar.konu}</div>
-
-        {/* 📢 SAHA DURUM YAZISI (Paylaştığınız görsellerdeki yeşil/sarı bar yapısı) */}
-        <div className={`text-[9px] font-black italic uppercase mb-3 ${durumRengi} border-l-2 border-current pl-2 flex items-center gap-2`}>
-          <span>{durumIcon}</span>
-          <span>{sahaDurumYazisi}</span>
+        {/* 3. SATIR: İHBAR VEREN VE KONU */}
+        <div className="mb-3">
+          <div className="text-[12px] font-black uppercase text-gray-100 leading-none mb-1 tracking-tighter italic">
+            {ihbar.ihbar_veren_ad_soyad}
+          </div>
+          <div className="text-[10px] font-bold text-gray-500 uppercase italic truncate opacity-80">
+            {ihbar.konu}
+          </div>
         </div>
 
-        {/* ALT BİLGİ */}
-        <div className="flex justify-between items-center text-[10px] font-black opacity-60 text-gray-300">
-            <span className={`uppercase ${ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi ? 'text-orange-500' : 'text-blue-400 animate-pulse'}`}>👤 {atananIsmi}</span>
-            <span className="flex items-center gap-1 font-black">⏱️ {Math.floor(diff)} DK</span>
+        {/* 4. SATIR: SAHA DURUM ŞERİDİ */}
+        <div className={`flex items-center gap-2 py-2 px-3 rounded-xl bg-black/30 border border-white/5 mb-3 ${durumRengi}`}>
+          <span className="text-xs">{durumIcon}</span>
+          <span className="text-[9px] font-black uppercase italic tracking-wider">
+            {ihbar.kapatma_tarihi || d.includes('tamamlandi') ? "✅ İŞ TAMAMLANDI" : ihbar.varis_tarihi ? "🔧 ARIZA NOKTASINDA" : ihbar.kabul_tarihi ? "🚛 EKİP YOLDA" : "📡 ATAMA BEKLİYOR"}
+          </span>
+        </div>
+
+        {/* 5. SATIR: ALT BİLGİ (PERSONEL & FİİLİ ÇALIŞMA SÜRESİ) */}
+        <div className="flex justify-between items-center pt-2 border-t border-gray-800/40 font-black italic">
+          <div className="flex items-center gap-2">
+            <div className={`w-1.5 h-1.5 rounded-full ${ihbar.atanan_personel ? 'bg-orange-500' : 'bg-blue-500 animate-pulse'}`}></div>
+            <span className="text-[9px] uppercase text-gray-400 truncate max-w-[120px]">{atananIsmi}</span>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="text-[7px] text-gray-600 uppercase mb-0.5 tracking-tighter">
+              {ihbar.kabul_tarihi ? 'FİİLİ ÇALIŞMA' : 'BEKLEME SÜRESİ'}
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-[8px] opacity-40">⏱️</span>
+              <span className={`text-[10px] ${ihbar.kabul_tarihi ? 'text-orange-500' : 'text-gray-500'}`}>
+                {calisilanDakika} DK
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-    )
-  }
+    );
+}
 
   const NavButton = ({ label, icon, path, onClick, active = false }: any) => (
     <div 

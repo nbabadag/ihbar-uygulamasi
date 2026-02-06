@@ -93,6 +93,8 @@ export default function IhbarDetay() {
       setYardimcilar(d.yardimcilar || []);
       if (d.secilen_nesne_adi) {
         setSecilenNesne({ nesne_adi: d.secilen_nesne_adi, ifs_kod: d.secilen_nesne_kod || '' });
+      } else {
+        setSecilenNesne(null); // Eğer DB'de yoksa state'i temizle
       }
     }
     setPersoneller(pRes.data?.filter(p => !p.role.toUpperCase().includes('ÇAĞRI')) || []); 
@@ -137,40 +139,20 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
-  // 🛡️ IFS & AKTİF İŞ KONTROLLÜ İŞE BAŞLATMA
   const isiBaslat = async () => {
     setLoading(true);
-
-    const { data: aktifIsler } = await supabase
-      .from('ihbarlar')
-      .select('id, konu')
-      .eq('atanan_personel', userId)
-      .eq('durum', 'Calisiliyor')
-      .neq('id', id);
+    const { data: aktifIsler } = await supabase.from('ihbarlar').select('id, konu').eq('atanan_personel', userId).eq('durum', 'Calisiliyor').neq('id', id);
 
     if (aktifIsler && aktifIsler.length > 0) {
       setLoading(false);
-      const git = confirm(
-        `⚠️ DİKKAT: Üzerinizde halen açık bir iş var: "${aktifIsler[0].konu}"\n\n` +
-        `Yeni işe başlamak için mevcut işi DURDURMANIZ veya BİTİRMENİZ gerekir.\n\n` +
-        `Mevcut işe gidip kapatmak ister misiniz?`
-      );
-      if (git) router.push(`/ihbarlar/${aktifIsler[0].id}`);
+      const git = confirm(`⚠️ DİKKAT: Üzerinizde açık iş var: "${aktifIsler[0].konu}"\n\nÖnce mevcut işi kapatın.`);
+      if (git) router.push(`/dashboard/ihbar-detay/${aktifIsler[0].id}`);
       return;
     }
 
     const pos = await getGpsPosition();
-    const guncelleme: any = {
-      durum: 'Calisiliyor', 
-      kabul_tarihi: new Date().toISOString(), 
-      enlem: pos?.lat || null, 
-      boylam: pos?.lng || null 
-    };
-
-    if (isVardiyaHavuz) {
-      guncelleme.atanan_personel = userId;
-      guncelleme.atama_tarihi = new Date().toISOString();
-    }
+    const guncelleme: any = { durum: 'Calisiliyor', kabul_tarihi: new Date().toISOString(), enlem: pos?.lat || null, boylam: pos?.lng || null };
+    if (isVardiyaHavuz) { guncelleme.atanan_personel = userId; guncelleme.atama_tarihi = new Date().toISOString(); }
 
     const { error } = await supabase.from('ihbarlar').update(guncelleme).eq('id', id);
     if (!error) fetchData();
@@ -178,7 +160,7 @@ export default function IhbarDetay() {
   }
 
   const arizaNoktasindayim = async () => {
-    if (!secilenNesne) return alert("⚠️ ARIZA NOKTASINA VARDIĞINIZI ONAYLAMAK İÇİN ÖNCE TEKNİK NESNE SEÇMELİSİNİZ!");
+    if (!secilenNesne) return alert("⚠️ ÖNCE TEKNİK NESNE SEÇMELİSİNİZ!");
     setLoading(true);
     const pos = await getGpsPosition();
     const { error } = await supabase.from('ihbarlar').update({ 
@@ -193,27 +175,22 @@ export default function IhbarDetay() {
     setLoading(false);
   }
 
-  // 🏁 IFS STANDARTLARINDA SESSİZ KAPANIŞ
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
+    // 🛡️ DİSİPLİN KONTROLÜ: Teknik nesne seçilmeden kapatılamaz
+    if (!secilenNesne) return alert("⚠️ TEKNİK NESNE SEÇİLMEDEN İŞ BİTİRİLEMEZ!");
+
     setLoading(true);
-    
     const pos = await getGpsPosition();
     const bitisZamani = new Date();
     const baslangicZamani = ihbar?.kabul_tarihi ? new Date(ihbar.kabul_tarihi) : bitisZamani;
     const farkDakika = Math.round((bitisZamani.getTime() - baslangicZamani.getTime()) / 60000);
-    
     const gunMetni = farkDakika > 1440 ? "1 Gün ve Üzeri" : "1 Günden Kısa";
 
-    // İş İstasyonu Mapping (201, 202, 204)
     let isIstasyonuKodu = "202"; 
     const grupIsmi = ihbar.calisma_gruplari?.grup_adi?.toUpperCase() || "";
-    
-    if (grupIsmi.includes("BİNA")) {
-      isIstasyonuKodu = "204";
-    } else if (grupIsmi.includes("ELEKTRİK")) {
-      isIstasyonuKodu = "201";
-    }
+    if (grupIsmi.includes("BİNA")) isIstasyonuKodu = "204";
+    else if (grupIsmi.includes("ELEKTRİK")) isIstasyonuKodu = "201";
 
     const { error } = await supabase.from('ihbarlar').update({ 
       durum: stat, 
@@ -224,43 +201,27 @@ export default function IhbarDetay() {
       calisma_suresi_dakika: farkDakika,
       fiili_sure_gun_metni: gunMetni,
       is_istasyonu: isIstasyonuKodu,
-      ie_sitesi: 30,
-      is_emri_turu: 'Arizi bakim/Ariza Talebi',
-      baglanti_turu: 'Ekipman',
       statu: 'Bitirildi'
     }).eq('id', id);
 
-    if (!error) { 
-      router.push('/dashboard'); 
-    } else {
-      alert("Hata: " + error.message);
-    }
+    if (!error) router.push('/dashboard'); 
+    else alert("Hata: " + error.message);
     setLoading(false);
   }
 
   const bilgileriMuhurle = async () => {
     setLoading(true);
-    const guncelAtamaTarihi = (seciliAtanan !== ihbar?.atanan_personel || seciliGrup !== ihbar?.atanan_grup_id) ? new Date().toISOString() : ihbar?.atama_tarihi;
     const { error } = await supabase.from('ihbarlar').update({ 
       konu: editKonu.toUpperCase(), 
       aciklama: editAciklama, 
       atanan_personel: seciliAtanan || null, 
       atanan_grup_id: seciliAtanan ? null : (seciliGrup || null), 
-      atama_tarihi: guncelAtamaTarihi,
       ifs_is_emri_no: ifsNo, 
       secilen_nesne_adi: secilenNesne?.nesne_adi || null, 
       secilen_nesne_kod: secilenNesne?.ifs_kod || null 
     }).eq('id', id);
     if (!error) { alert("KAYDEDİLDİ ✅"); fetchData(); }
     setLoading(false);
-  }
-
-  const openMaps = () => {
-    if (ihbar?.guncel_konum && !ihbar.guncel_konum.includes('Reddedildi')) {
-      window.open(`https://www.google.com/maps?q=${ihbar.guncel_konum}`, '_blank');
-    } else {
-      alert("📍 KONUM VERİSİ BULUNAMADI!");
-    }
   }
 
   if (!ihbar) return <div className="p-10 text-white bg-[#0a0b0e] min-h-screen text-center italic font-black uppercase">YÜKLENİYOR...</div>
@@ -271,11 +232,8 @@ export default function IhbarDetay() {
         
         <div className="flex justify-between items-center bg-[#111318] p-5 rounded-2xl border border-gray-800 shadow-2xl">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl text-[10px]">← GERİ</button>
-          {ihbar.guncel_konum && (
-            <button onClick={openMaps} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[10px] animate-pulse">📍 HARİTADA GÖR</button>
-          )}
-          <div className="text-[10px] flex items-center gap-4">
-             <span className="text-gray-500 italic uppercase font-black tracking-widest">ATANAN: {ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZDA'}</span>
+          <div className="text-[10px] uppercase font-black tracking-widest text-gray-500">
+            DURUM: <span className="text-orange-500">{ihbar.durum}</span>
           </div>
         </div>
 
@@ -284,77 +242,80 @@ export default function IhbarDetay() {
             <div className="bg-[#1a1c23] p-6 md:p-8 rounded-[2.5rem] border border-gray-800 shadow-2xl">
               <h1 className="text-3xl md:text-4xl mb-4 tracking-tighter text-orange-500">{ihbar.ihbar_veren_ad_soyad}</h1>
 
-              {isVardiyaHavuz && (
-                <div className="bg-orange-600/20 border border-orange-500 p-4 rounded-2xl mb-6 text-center">
-                  <p className="text-[10px] text-orange-500 animate-pulse font-black">🚨 BU BİR VARDİYA İHBARIDIR. DOĞRUDAN ÜSTLENEBİLİRSİNİZ.</p>
-                </div>
-              )}
-
+              {/* 📞 ARAMA BUTONU */}
               {ihbar.ihbar_veren_tel && (
                 <a href={`tel:${ihbar.ihbar_veren_tel}`} className="flex items-center justify-between bg-green-600 p-5 rounded-3xl mb-6 active:scale-95 transition-all">
                   <div className="flex items-center gap-4">
                     <span className="text-2xl">📞</span>
-                    <div className="flex flex-col"><span className="text-[8px] text-white/60 uppercase">İHBARI YAPAN</span><span className="text-lg">{ihbar.ihbar_veren_tel}</span></div>
+                    <div className="flex flex-col"><span className="text-[8px] text-white/60">İHBARI YAPAN</span><span className="text-lg">{ihbar.ihbar_veren_tel}</span></div>
                   </div>
                   <span className="text-[10px] bg-white/20 px-4 py-2 rounded-xl">ARA</span>
                 </a>
               )}
 
+              {/* 👥 YARDIMCI PERSONEL */}
               <div className="bg-[#111318] p-6 rounded-3xl border border-orange-500/20 mb-8">
                 <p className="text-orange-500 text-[10px] mb-4 tracking-widest uppercase italic">👥 YARDIMCI PERSONEL (EKİP)</p>
                 <div className="flex flex-wrap gap-2 mb-4 font-black">
                     {yardimcilar.map(ad => (
                         <span key={ad} onClick={() => yardimciEkleCikar(ad)} className="bg-orange-600 px-4 py-2 rounded-xl text-[10px] cursor-pointer hover:bg-red-600 transition-colors">{ad} ×</span>
                     ))}
-                    {yardimcilar.length === 0 && <span className="text-[10px] text-gray-600 font-black">HENÜZ YARDIMCI EKLENMEDİ</span>}
+                    {yardimcilar.length === 0 && <span className="text-[10px] text-gray-600">HENÜZ YARDIMCI EKLENMEDİ</span>}
                 </div>
-                <select onChange={(e) => { if(e.target.value) yardimciEkleCikar(e.target.value); e.target.value = ""; }} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] text-white outline-none font-black uppercase italic">
-                    <option value="">+ YARDIMCI PERSONEL EKLE</option>
-                    {personeller.filter(p => p.id !== ihbar.atanan_personel).map(p => (
-                        <option key={p.id} value={p.full_name} className="bg-[#1a1c23]">{p.full_name}</option>
-                    ))}
-                </select>
-              </div>
-
-              <div className="mb-6">
-                <p className="text-[10px] text-gray-500 mb-2 font-black">KONU</p>
-                {canEditIhbar ? ( <input className="w-full bg-black/50 border border-orange-500/30 p-4 rounded-2xl text-blue-400 outline-none font-black italic" value={editKonu} onChange={e => setEditKonu(e.target.value)} /> ) : ( <p className="text-lg text-blue-400 font-black">{ihbar.konu}</p> )}
-              </div>
-
-              <div className="mb-8">
-                <p className="text-[10px] text-gray-500 mb-2 font-black">AÇIKLAMA</p>
-                {canEditIhbar ? ( <textarea className="w-full bg-black/30 border border-gray-800 p-4 rounded-2xl text-gray-300 text-sm outline-none font-black italic" rows={3} value={editAciklama} onChange={e => setEditAciklama(e.target.value)} /> ) : ( <p className="text-gray-300 text-sm italic font-black">"{ihbar.aciklama}"</p> )}
-              </div>
-              
-              <div className="bg-[#111318] p-6 rounded-3xl border border-blue-500/20 mb-8 font-black uppercase italic">
-                <p className="text-blue-400 text-[10px] mb-4 tracking-widest uppercase italic">⚙️ TEKNİK NESNE & VARLIK</p>
-                {secilenNesne ? (
-                  <div className="flex justify-between items-center bg-blue-600/10 p-4 rounded-2xl border border-blue-500/40">
-                    <span className="text-xs">{secilenNesne.nesne_adi} <span className="text-blue-400 ml-2">[{secilenNesne.ifs_kod}]</span></span>
-                    {canEditAssignment && <button onClick={() => setSecilenNesne(null)} className="text-[8px] text-red-500 uppercase font-black">DEĞİŞTİR</button>}
-                  </div>
-                ) : (
-                  <div className="relative font-black italic">
-                    <input type="text" placeholder="GÖREV İÇİN NESNE SEÇİN..." className="w-full p-4 bg-black/40 border border-orange-500/50 rounded-2xl text-[10px] font-black italic" value={nesneSearch} onChange={e => setNesneSearch(e.target.value)} />
-                    {nesneSearch && (
-                      <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-40 overflow-y-auto z-50 font-black">
-                        {nesneListesi.filter(n => n.nesne_adi?.toLowerCase().includes(nesneSearch.toLowerCase())).map(n => ( 
-                          <div key={n.id} onMouseDown={() => { setSecilenNesne({ nesne_adi: n.nesne_adi, ifs_kod: n.ifs_kod }); setNesneSearch(''); }} className="p-4 hover:bg-blue-600/20 cursor-pointer text-[10px] border-b border-gray-800">
-                            {n.nesne_adi} [{n.ifs_kod}]
-                          </div> 
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                {ihbar.durum === 'Calisiliyor' && (
+                  <select onChange={(e) => { if(e.target.value) yardimciEkleCikar(e.target.value); e.target.value = ""; }} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] text-white outline-none font-black uppercase italic">
+                      <option value="">+ YARDIMCI PERSONEL EKLE</option>
+                      {personeller.filter(p => p.id !== ihbar.atanan_personel).map(p => (
+                          <option key={p.id} value={p.full_name} className="bg-[#1a1c23]">{p.full_name}</option>
+                      ))}
+                  </select>
                 )}
               </div>
 
+              {/* KONU & AÇIKLAMA */}
+              <div className="mb-6">
+                <p className="text-[10px] text-gray-500 mb-2 font-black uppercase">KONU</p>
+                {canEditIhbar ? ( <input className="w-full bg-black/50 border border-orange-500/30 p-4 rounded-2xl text-blue-400 outline-none font-black italic" value={editKonu} onChange={e => setEditKonu(e.target.value)} /> ) : ( <p className="text-lg text-blue-400 font-black italic">{ihbar.konu}</p> )}
+              </div>
+
+              <div className="mb-8">
+                <p className="text-[10px] text-gray-500 mb-2 font-black uppercase tracking-widest">AÇIKLAMA</p>
+                <p className="text-gray-300 text-sm italic font-black">"{ihbar.aciklama}"</p>
+              </div>
+              
+              {/* ⚙️ TEKNİK NESNE SEÇİMİ (KRİTİK ADIM) */}
+              {ihbar.durum === 'Calisiliyor' && (
+                <div className="bg-[#111318] p-6 rounded-3xl border border-blue-500/20 mb-8">
+                  <p className="text-blue-400 text-[10px] mb-4 tracking-widest uppercase italic">⚙️ TEKNİK NESNE & VARLIK (ZORUNLU)</p>
+                  {secilenNesne ? (
+                    <div className="flex justify-between items-center bg-blue-600/10 p-5 rounded-2xl border border-blue-500/40">
+                      <span className="text-xs font-black italic">{secilenNesne.nesne_adi} <span className="text-blue-400 ml-2">[{secilenNesne.ifs_kod}]</span></span>
+                      {!ihbar.varis_tarihi && <button onClick={() => setSecilenNesne(null)} className="text-[8px] text-red-500 underline font-black uppercase italic">DEĞİŞTİR</button>}
+                    </div>
+                  ) : (
+                    <div className="relative font-black italic">
+                      <input type="text" placeholder="GÖREV İÇİN NESNE SEÇİN..." className="w-full p-4 bg-black/40 border border-orange-500/50 rounded-2xl text-[10px] font-black italic" value={nesneSearch} onChange={e => setNesneSearch(e.target.value)} />
+                      {nesneSearch && (
+                        <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-40 overflow-y-auto z-50 font-black">
+                          {nesneListesi.filter(n => n.nesne_adi?.toLowerCase().includes(nesneSearch.toLowerCase())).map(n => ( 
+                            <div key={n.id} onMouseDown={() => { setSecilenNesne({ nesne_adi: n.nesne_adi, ifs_kod: n.ifs_kod }); setNesneSearch(''); }} className="p-4 hover:bg-blue-600/20 cursor-pointer text-[10px] border-b border-gray-800 font-black italic">
+                              {n.nesne_adi} [{n.ifs_kod}]
+                            </div> 
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* MALZEME KISMI */}
               {ihbar.durum === 'Calisiliyor' && ihbar.varis_tarihi && (
                 <div className="pt-8 border-t border-gray-800 space-y-6">
-                  <p className="text-orange-500 text-[10px] tracking-widest font-black uppercase italic">📦 MALZEME KULLANIMI</p>
-                  <div className="grid grid-cols-2 gap-4 font-black italic">
+                  <p className="text-orange-500 text-[10px] tracking-widest font-black uppercase italic font-black uppercase">📦 MALZEME KULLANIMI</p>
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="relative">
-                      <input type="text" placeholder={isSearching ? "ARANIYOR..." : "MALZEME ARA..."} className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black italic uppercase" value={malzemeSearch} onChange={e=>setMalzemeSearch(e.target.value)} />
+                      <input type="text" placeholder="MALZEME ARA..." className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[10px] font-black italic uppercase" value={malzemeSearch} onChange={e=>setMalzemeSearch(e.target.value)} />
                       {malzemeKatalog.length > 0 && (
                         <div className="absolute left-0 right-0 top-full mt-2 bg-[#1a1c23] border border-gray-700 rounded-2xl max-h-60 overflow-y-auto z-[100] shadow-2xl font-black italic uppercase">
                           {malzemeKatalog.map(m => ( <div key={m.id} onMouseDown={()=>{setSecilenMalzeme(m); setMalzemeSearch(m.malzeme_adi); setMalzemeKatalog([]);}} className="p-4 hover:bg-orange-600/20 border-b border-gray-800 cursor-pointer text-[10px]">{m.malzeme_adi}</div> ))}
@@ -368,7 +329,7 @@ export default function IhbarDetay() {
                   </div>
                   <div className="bg-black/20 p-4 rounded-2xl border border-gray-800 font-black italic uppercase">
                     {kullanilanlar.map((k, i) => (
-                      <div key={i} className="flex justify-between items-center text-[10px] py-2 border-b border-gray-800/40 italic uppercase">
+                      <div key={i} className="flex justify-between items-center text-[10px] py-2 border-b border-gray-800/40 italic uppercase font-black">
                         <span>{k.malzeme_adi}</span>
                         <div className="flex items-center gap-4">
                           <span className="text-orange-500 font-bold">{k.miktar || k.kullanim_adedi} {k.birim}</span>
@@ -382,39 +343,53 @@ export default function IhbarDetay() {
             </div>
           </div>
 
+          {/* SAĞ PANEL: AKSİYON MERKEZİ */}
           <div className="space-y-6">
             <div className="bg-[#111318] p-6 md:p-8 rounded-[2.5rem] border border-orange-500/20 shadow-2xl">
               {ihbar.durum === 'Calisiliyor' ? (
                 <div className="space-y-6">
+                  {/* ADIM 2: VARIŞ ONAYI (Nesne Seçimi Şart) */}
                   {!ihbar.varis_tarihi && (
                     <div className="space-y-2">
                        {!secilenNesne && (
-                         <p className="text-[8px] text-red-500 text-center animate-pulse font-black italic uppercase">⚠️ ÖNCE TEKNİK NESNE SEÇİLMELİ!</p>
+                         <p className="text-[9px] text-red-500 text-center animate-pulse font-black italic uppercase bg-red-500/10 py-2 rounded-xl border border-red-500/20">⚠️ ÖNCE TEKNİK NESNE SEÇMELİSİNİZ!</p>
                        )}
                        <button 
                          onClick={arizaNoktasindayim} 
                          disabled={!secilenNesne || loading}
-                         className={`w-full py-6 rounded-3xl text-sm font-black active:scale-95 transition-all border-b-4 uppercase italic 
-                           ${!secilenNesne ? 'bg-gray-800 border-gray-900 opacity-50 cursor-not-allowed' : 'bg-yellow-600 border-yellow-800 animate-bounce'}`}
+                         className={`w-full py-8 rounded-3xl text-sm font-black active:scale-95 transition-all border-b-4 uppercase italic shadow-xl
+                           ${!secilenNesne ? 'bg-gray-800 border-gray-900 opacity-50 cursor-not-allowed text-gray-600' : 'bg-yellow-600 border-yellow-800 animate-bounce text-white'}`}
                        >
                          📍 ARIZA NOKTASINDAYIM
                        </button>
                     </div>
                   )}
-                  {ihbar.varis_tarihi && <div className="bg-green-900/20 p-4 rounded-2xl border border-green-800/50 text-center font-black"><p className="text-[10px] text-green-500 italic uppercase">VARIŞ MÜHÜRLENDİ ✅</p></div>}
+
+                  {/* ADIM 3: İŞ BİTİRİŞ (Varış Tarihi Şart) */}
+                  {ihbar.varis_tarihi ? (
+                    <div className="space-y-6">
+                      <div className="bg-green-900/20 p-4 rounded-2xl border border-green-800/50 text-center font-black">
+                        <p className="text-[10px] text-green-500 italic uppercase">VARIŞ MÜHÜRLENDİ ✅</p>
+                      </div>
+                      <p className="text-[10px] text-gray-500 text-center uppercase italic font-black">İŞLEM RAPORU</p>
+                      <textarea className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[11px] outline-none font-black italic uppercase" rows={4} value={personelNotu} placeholder="NELER YAPILDI?..." onChange={e=>setPersonelNotu(e.target.value.toUpperCase())} />
+                      <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 py-6 rounded-3xl text-xl active:scale-95 transition-all font-black italic uppercase shadow-xl border-b-4 border-green-800">🏁 İŞİ BİTİR</button>
+                    </div>
+                  ) : (
+                    <p className="text-[8px] text-gray-600 text-center uppercase italic font-black">VARIŞ ONAYI YAPILMADAN İŞ BİTİRİLEMEZ</p>
+                  )}
                   
-                  <p className="text-[10px] text-gray-500 text-center uppercase italic font-black">İŞLEM RAPORU</p>
-                  <textarea className="w-full p-4 bg-black/40 border border-gray-700 rounded-2xl text-[11px] outline-none font-black italic" rows={4} value={personelNotu} onChange={e=>setPersonelNotu(e.target.value.toUpperCase())} />
-                  <button onClick={() => isiKapatVeyaDurdur('Tamamlandi')} className="w-full bg-green-600 py-6 rounded-3xl text-xl active:scale-95 transition-all font-black italic uppercase">🏁 İŞİ BİTİR</button>
-                  <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-red-900/40 text-red-500 py-3 rounded-2xl text-[10px] border border-red-900/50 font-black italic uppercase">⚠️ İŞİ DURDUR</button>
+                  <button onClick={() => isiKapatVeyaDurdur('Durduruldu')} className="w-full bg-red-900/40 text-red-500 py-3 rounded-2xl text-[10px] border border-red-900/50 font-black italic uppercase active:scale-95 transition-all">⚠️ İŞİ DURDUR</button>
                 </div>
               ) : (
+                /* ADIM 1: İŞE BAŞLA */
                 <button onClick={isiBaslat} disabled={!canStartJob || loading} className={`w-full py-12 rounded-[3rem] text-3xl transition-all shadow-2xl font-black italic uppercase ${canStartJob ? 'bg-orange-600 animate-pulse' : 'bg-gray-800 opacity-50'}`}>
                   {loading ? 'GPS...' : (canStartJob ? (isVardiyaHavuz ? '🚀 İŞİ ÜSTLEN' : '🚀 İŞE BAŞLA') : 'YETKİ YOK')}
                 </button>
               )}
             </div>
 
+            {/* KOORDİNASYON PANELİ */}
             {canEditAssignment && (
               <div className="bg-[#111318] p-6 md:p-8 rounded-[2.5rem] border-t-8 border-orange-600 space-y-4 shadow-2xl font-black uppercase italic">
                 <p className="text-[10px] tracking-widest uppercase italic">KOORDİNASYON / ATAMA</p>
@@ -427,7 +402,7 @@ export default function IhbarDetay() {
                   <option value="">-- ŞAHIS SEÇ --</option>
                   {personeller.map(p => <option key={p.id} value={p.id} className="bg-black">{p.full_name}</option>)}
                 </select>
-                <button onClick={bilgileriMuhurle} className="w-full bg-white text-black py-4 rounded-3xl text-[10px] font-black uppercase active:scale-95 italic font-black">KAYDET</button>
+                <button onClick={bilgileriMuhurle} className="w-full bg-white text-black py-4 rounded-3xl text-[10px] font-black uppercase active:scale-95 italic">KAYDET</button>
               </div>
             )}
           </div>
