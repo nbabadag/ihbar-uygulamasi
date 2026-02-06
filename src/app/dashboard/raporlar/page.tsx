@@ -13,6 +13,7 @@ export default function Raporlar() {
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ total: 0, avgTime: 0, bottleneck: '', efficiency: 0 })
   
+  // 📅 Tarih Filtreleri
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
@@ -38,26 +39,26 @@ export default function Raporlar() {
     setLoading(false);
   }
 
+  // 📥 TARİH FİLTRELİ EXCEL İNDİRME
   const excelIndir = () => {
-    let filtrelenmisData = data;
+    let filtrelenmis = data;
     if (startDate && endDate) {
-      filtrelenmisData = data.filter(i => {
+      filtrelenmis = data.filter(i => {
         const d = new Date(i.created_at).getTime();
         return d >= new Date(startDate).getTime() && d <= new Date(endDate).setHours(23,59,59);
       });
     }
-    if (filtrelenmisData.length === 0) return alert("Veri bulunamadı.");
+    if (filtrelenmis.length === 0) return alert("Seçilen aralıkta veri yok.");
+    
     const headers = ["IS_EMRI_NO", "KONU", "NESNE", "ISTASYON", "BASLANGIC", "BITIS", "SURE_DK", "DURUM"];
-    const rows = filtrelenmisData.map(i => [i.ifs_is_emri_no, i.konu, i.secilen_nesne_adi, i.is_istasyonu, i.kabul_tarihi, i.kapama_tarihi, i.calisma_suresi_dakika, i.durum]);
+    const rows = filtrelenmis.map(i => [i.ifs_is_emri_no, i.konu, i.secilen_nesne_adi, i.is_istasyonu, i.kabul_tarihi, i.kapama_tarihi, i.calisma_suresi_dakika, i.durum]);
     let csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Saha360_Rapor_${startDate || 'Tumu'}.csv`);
-    document.body.appendChild(link);
+    link.href = url;
+    link.download = `Saha360_Rapor_${startDate || 'Hepsi'}.csv`;
     link.click();
-    document.body.removeChild(link);
   }
 
   const workshopData = [
@@ -74,12 +75,13 @@ export default function Raporlar() {
     return acc;
   }, {});
 
+  // Süre odaklı sıralanmış veri (Darboğazlar en üstte)
   const scatterData = Object.values(equipmentStats).map((e: any) => ({
     name: e.name,
-    x: e.count,
-    y: Math.round(e.totalTime / e.count),
+    x: e.count, // Arıza Sayısı
+    y: Math.round(e.totalTime / e.count), // Ortalama Süre
     z: e.count
-  })).sort((a,b) => b.y - a.y); // Süreye göre sıralı
+  })).sort((a,b) => b.y - a.y);
 
   const top10Equipment = scatterData.slice(0, 10);
 
@@ -87,11 +89,11 @@ export default function Raporlar() {
     if (active && payload && payload.length) {
       const item = payload[0].payload;
       return (
-        <div className="bg-[#111318] border border-orange-500/50 p-4 rounded-xl shadow-2xl font-black italic uppercase min-w-[200px]">
+        <div className="bg-[#111318] border border-orange-500/50 p-4 rounded-xl shadow-2xl font-black italic uppercase min-w-[220px]">
           <p className="text-orange-500 text-[10px] mb-2 border-b border-gray-800 pb-1">{item.name}</p>
           <div className="space-y-1">
-            <p className="text-white text-[10px]">ARIZA: <span className="text-blue-400">{item.x || item.value}</span></p>
-            {item.y && <p className="text-white text-[10px]">ORT. SÜRE: <span className="text-red-400">{item.y} DK</span></p>}
+            <p className="text-white text-[10px]">ARIZA SAYISI: <span className="text-blue-400">{item.x || item.value}</span></p>
+            {item.y && <p className="text-white text-[10px]">ORTALAMA SÜRE: <span className="text-red-400">{item.y} DK</span></p>}
           </div>
         </div>
       );
@@ -99,73 +101,107 @@ export default function Raporlar() {
     return null;
   };
 
-  if (loading) return <div className="min-h-screen bg-[#0a0b0e] flex items-center justify-center text-orange-500 font-black italic uppercase">ANALİZ EDİLİYOR...</div>
+  if (loading) return <div className="min-h-screen bg-[#0a0b0e] flex items-center justify-center text-orange-500 font-black italic uppercase tracking-widest animate-pulse">VERİLER MÜHÜRLENİYOR...</div>
 
   return (
-    <div className="min-h-screen bg-[#06070a] text-white p-6 md:p-12 font-black uppercase italic">
+    <div className="min-h-screen bg-[#06070a] text-white p-6 md:p-12 font-black uppercase italic selection:bg-orange-500">
       <div className="max-w-[1600px] mx-auto space-y-10">
         
-        {/* ÜST PANEL & TARİH FİLTRESİ */}
+        {/* ÜST PANEL: TARİH VE EXCEL */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-6 border-b-2 border-orange-500 pb-8">
-          <h1 className="text-4xl tracking-tighter">SAHA <span className="text-orange-500 text-outline">ANALİTİK</span></h1>
-          <div className="flex flex-wrap items-center gap-4 bg-[#111318] p-4 rounded-3xl border border-gray-800">
-            <input type="date" className="bg-transparent text-[10px] text-white border-none outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
-            <span className="text-gray-600">-</span>
-            <input type="date" className="bg-transparent text-[10px] text-white border-none outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
-            <button onClick={excelIndir} className="bg-green-600 px-6 py-2 rounded-2xl text-[10px]">📊 EXCEL</button>
-            <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2 rounded-2xl text-[10px]">GERİ</button>
+          <h1 className="text-4xl tracking-tighter italic">SAHA <span className="text-orange-500 text-outline font-black">ANALİTİK</span></h1>
+          
+          <div className="flex flex-wrap items-center gap-4 bg-[#111318] p-4 rounded-3xl border border-gray-800 shadow-xl">
+            <div className="flex flex-col gap-1">
+              <span className="text-[7px] text-gray-500 ml-2">BAŞLANGIÇ</span>
+              <input type="date" className="bg-black/50 p-2 rounded-xl text-[10px] text-white border border-gray-800 outline-none focus:border-orange-500" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[7px] text-gray-500 ml-2">BİTİŞ</span>
+              <input type="date" className="bg-black/50 p-2 rounded-xl text-[10px] text-white border border-gray-800 outline-none focus:border-orange-500" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+            <button onClick={excelIndir} className="bg-green-600 px-6 py-4 rounded-2xl text-[10px] hover:bg-green-700 transition-all shadow-lg shadow-green-900/20 active:scale-95">📊 EXCEL İNDİR</button>
+            <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-4 rounded-2xl text-[10px] active:scale-95 shadow-lg shadow-orange-900/20">GERİ DÖN</button>
           </div>
         </div>
 
         {/* KPI KARTLARI */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-orange-600">
-            <p className="text-[10px] text-gray-500 mb-2">TOPLAM İŞ</p>
-            <h2 className="text-5xl text-orange-500 tracking-tighter">{stats.total}</h2>
+          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-orange-600 hover:bg-[#15171d] transition-all">
+            <p className="text-[10px] text-gray-500 mb-2 font-black tracking-widest">TOPLAM İŞ EMİRLERİ</p>
+            <h2 className="text-6xl text-orange-500 tracking-tighter">{stats.total}</h2>
           </div>
-          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-blue-500">
-            <p className="text-[10px] text-gray-500 mb-2">MTTR (ORT. TAMİR)</p>
-            <h2 className="text-5xl text-blue-500 tracking-tighter">{stats.avgTime} DK</h2>
+          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-blue-500 hover:bg-[#15171d] transition-all">
+            <p className="text-[10px] text-gray-500 mb-2 font-black tracking-widest">MTTR (ORT. TAMİR)</p>
+            <h2 className="text-6xl text-blue-500 tracking-tighter">{stats.avgTime} <span className="text-sm">DK</span></h2>
           </div>
-          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-green-500">
-            <p className="text-[10px] text-gray-500 mb-2">VERİMLİLİK</p>
-            <h2 className="text-5xl text-green-500 tracking-tighter">%{stats.efficiency}</h2>
+          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-green-500 hover:bg-[#15171d] transition-all">
+            <p className="text-[10px] text-gray-500 mb-2 font-black tracking-widest">VERİMLİLİK SKORU</p>
+            <h2 className="text-6xl text-green-500 tracking-tighter">%{stats.efficiency}</h2>
           </div>
-          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-red-500">
-            <p className="text-[10px] text-gray-500 mb-2 font-black">DARBOĞAZ</p>
-            <h2 className="text-sm text-red-500 truncate">{stats.bottleneck}</h2>
+          <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-red-500 hover:bg-[#15171d] transition-all">
+            <p className="text-[10px] text-gray-500 mb-2 font-black tracking-widest uppercase">EN KRİTİK VARLIK</p>
+            <h2 className="text-sm text-red-500 truncate leading-none mt-2 h-10">{stats.bottleneck}</h2>
           </div>
         </div>
 
-        {/* GRAFİKLER - EKSEN DÜZELTİLMİŞ */}
+        {/* GRAFİKLER */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 bg-[#111318] p-10 rounded-[3rem] border border-gray-800">
-            <h3 className="text-xs mb-10 border-l-4 border-orange-500 pl-4">ATÖLYE YÜKÜ</h3>
+          {/* ATÖLYE KARNELERİ */}
+          <div className="lg:col-span-1 bg-[#111318] p-10 rounded-[3rem] border border-gray-800 shadow-2xl">
+            <h3 className="text-xs mb-10 border-l-4 border-orange-500 pl-4 tracking-[0.2em]">İŞ İSTASYONU YÜKÜ</h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={workshopData} layout="vertical">
-                <XAxis type="number" domain={['auto', 'auto']} hide />
+                <XAxis type="number" domain={[0, 'auto']} hide />
                 <YAxis dataKey="name" type="category" stroke="#555" fontSize={8} width={100} />
                 <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
-                <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={20}>
+                <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={25}>
                   {workshopData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="lg:col-span-2 bg-[#111318] p-10 rounded-[3rem] border border-gray-800 h-[450px]">
-            <h3 className="text-xs mb-10 border-l-4 border-blue-500 pl-4">DARBOĞAZ (ARIZA VS SÜRE)</h3>
+          {/* 🚀 DARBOĞAZ ANALİZİ (ÖLÇEKLENDİRİLMİŞ X-EKSENİ) */}
+          <div className="lg:col-span-2 bg-[#111318] p-10 rounded-[3rem] border border-gray-800 h-[500px] shadow-2xl">
+            <div className="flex justify-between items-center mb-10">
+              <h3 className="text-xs border-l-4 border-blue-500 pl-4 tracking-[0.2em]">DARBOĞAZ (ARIZA VS SÜRE)</h3>
+              <span className="text-[8px] text-blue-500 font-black tracking-widest">X-EKSENİ: LOGARİTMİK (DETAYLI GÖRÜNÜM)</span>
+            </div>
             <ResponsiveContainer width="100%" height="80%">
               <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
-                <CartesianGrid stroke="#222" vertical={false} />
-                {/* Eksenler otomatik ölçekli (auto) hale getirildi */}
-                <XAxis type="number" dataKey="x" name="ARIZA" stroke="#555" fontSize={10} domain={['auto', 'auto']} tickCount={10} />
-                <YAxis type="number" dataKey="y" name="SÜRE" stroke="#555" fontSize={10} domain={['auto', 'auto']} tickCount={10} />
-                <ZAxis type="number" dataKey="z" range={[100, 1000]} />
+                <CartesianGrid stroke="#222" vertical={false} strokeDasharray="3 3" />
+                {/* XAxis: scale="sqrt" kullanarak 0-100 arasını geniş, 100+ arasını kısa yaptık. 
+                  Bu sayede yığılan küçük veriler açılırken, büyükler sonda toplanır.
+                */}
+                <XAxis 
+                  type="number" 
+                  dataKey="x" 
+                  name="ARIZA SAYISI" 
+                  stroke="#666" 
+                  fontSize={9} 
+                  scale="sqrt" 
+                  domain={[1, 'auto']} 
+                  label={{ value: 'İŞ EMRİ SAYISI (GENİŞLETİLMİŞ)', position: 'insideBottom', offset: -10, fontSize: 8, fill: '#444' }}
+                />
+                <YAxis 
+                  type="number" 
+                  dataKey="y" 
+                  name="ORTALAMA SÜRE" 
+                  stroke="#666" 
+                  fontSize={9} 
+                  domain={['auto', 'auto']}
+                  label={{ value: 'ORT. SÜRE (DK)', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#444' }}
+                />
+                <ZAxis type="number" dataKey="z" range={[150, 1500]} />
                 <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
-                <Scatter name="Varlıklar" data={scatterData}>
+                <Scatter name="Ekipmanlar" data={scatterData}>
                   {scatterData.map((entry, index) => (
-                    <Cell key={index} fill={entry.y > stats.avgTime ? '#ef4444' : '#3b82f6'} />
+                    <Cell 
+                      key={index} 
+                      fill={entry.y > stats.avgTime * 1.5 ? '#ef4444' : '#3b82f6'} 
+                      className="cursor-pointer hover:opacity-50 transition-all drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]"
+                    />
                   ))}
                 </Scatter>
               </ScatterChart>
@@ -173,19 +209,25 @@ export default function Raporlar() {
           </div>
         </div>
 
-        {/* 🏆 EN ÇOK ZAMAN KAYBETTİREN 10 VARLIK */}
-        <div className="bg-[#111318] p-10 rounded-[3rem] border border-gray-800">
-          <h3 className="text-xs mb-8 border-l-4 border-red-600 pl-4 tracking-widest font-black">EN KRİTİK 10 EKİPMAN (SÜRE ODAKLI)</h3>
+        {/* 🏆 EN KRİTİK 10 EKİPMAN (SÜRE ODAKLI SIRALAMA) */}
+        <div className="bg-[#111318] p-10 rounded-[4rem] border border-gray-800 shadow-2xl">
+          <div className="flex justify-between items-center mb-10">
+            <h3 className="text-xs border-l-4 border-red-600 pl-4 tracking-[0.2em]">EN ÇOK ZAMAN KAYBETTİREN 10 VARLIK</h3>
+            <span className="text-[10px] bg-red-900/20 text-red-500 px-4 py-1 rounded-full border border-red-900/50">YÜKSEK RİSK GRUBU</span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             {top10Equipment.map((e, idx) => (
-              <div key={idx} className="bg-black/50 p-6 rounded-[2.5rem] border border-gray-900 relative group transition-all hover:border-orange-500">
-                <div className="absolute top-0 right-0 bg-red-600 text-black px-3 py-1 text-[8px] rounded-bl-xl font-black">#{idx + 1}</div>
-                <p className="text-[10px] text-gray-500 mb-4 h-8 overflow-hidden font-black uppercase italic">{e.name}</p>
-                <div className="flex justify-between items-end">
-                  <div className="text-2xl font-black">{e.x} <span className="text-[8px] text-gray-700">ARIZA</span></div>
+              <div key={idx} className="bg-black/50 p-8 rounded-[3rem] border border-gray-900 relative group hover:border-orange-500/50 transition-all">
+                <div className="absolute top-0 right-0 bg-red-600 text-black px-4 py-1 text-[10px] rounded-bl-[1.5rem] font-black italic">#{idx + 1}</div>
+                <p className="text-[10px] text-gray-500 mb-6 h-8 overflow-hidden font-black leading-tight uppercase group-hover:text-white transition-all">{e.name}</p>
+                <div className="flex justify-between items-end border-t border-gray-800 pt-4">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] text-gray-700">ARIZA</span>
+                    <span className="text-3xl font-black text-white">{e.x}</span>
+                  </div>
                   <div className="text-right">
-                    <p className="text-[8px] text-gray-400">ORT. SÜRE</p>
-                    <p className="text-sm text-orange-500 font-black">{e.y} DK</p>
+                    <span className="text-[8px] text-gray-700 font-black">ORT. SÜRE</span>
+                    <p className="text-xl text-orange-500 font-black leading-none">{e.y} <span className="text-[10px]">DK</span></p>
                   </div>
                 </div>
               </div>
@@ -193,6 +235,9 @@ export default function Raporlar() {
           </div>
         </div>
 
+      </div>
+      <div className="mt-12 text-center pb-12 opacity-30">
+        <p className="text-[8px] tracking-[1.5em] font-black">SAHA 360 ANALİTİK // IFS VERİ ENTEGRASYONU // {new Date().getFullYear()}</p>
       </div>
     </div>
   )
