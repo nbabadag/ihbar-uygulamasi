@@ -43,7 +43,6 @@ export default function IhbarDetay() {
   const canEditIhbar = isCagriMerkezi || isAdmin || isMudur; 
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   
-  // 🚀 VARDİYA MODU YETKİ MÜHÜRÜ
   const isVardiyaHavuz = ihbar?.oncelik_durumu === 'VARDİYA_MODU' && !ihbar.atanan_personel;
   const canStartJob = !isCagriMerkezi && (
     ihbar?.atanan_personel === userId || 
@@ -75,7 +74,7 @@ export default function IhbarDetay() {
     }
 
     const [ihbarRes, pRes, gRes, kmRes, nRes] = await Promise.all([
-      supabase.from('ihbarlar').select(`*, profiles:atanan_personel(full_name), calisma_gruplari:atanan_grup_id(grup_adi)`).eq('id', id).single(),
+      supabase.from('ihbarlar').select(`*, profiles:atanan_personel(full_name, personel_sicil_no), calisma_gruplari:atanan_grup_id(grup_adi)`).eq('id', id).single(),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
       supabase.from('calisma_gruplari').select('*').order('grup_adi'),
       supabase.from('ihbar_malzemeleri').select('*').eq('ihbar_id', id),
@@ -138,11 +137,10 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
-  // 🛡️ GÜNCELLENMİŞ İŞE BAŞLAMA MANTIĞI (Çakışma Kontrollü)
+  // 🛡️ IFS & AKTİF İŞ KONTROLLÜ İŞE BAŞLATMA
   const isiBaslat = async () => {
     setLoading(true);
 
-    // 1. Üzerinde aktif iş var mı kontrolü
     const { data: aktifIsler } = await supabase
       .from('ihbarlar')
       .select('id, konu')
@@ -162,8 +160,6 @@ export default function IhbarDetay() {
     }
 
     const pos = await getGpsPosition();
-    
-    // 2. Havuzdan alma veya normal başlatma mühürü
     const guncelleme: any = {
       durum: 'Calisiliyor', 
       kabul_tarihi: new Date().toISOString(), 
@@ -197,29 +193,47 @@ export default function IhbarDetay() {
     setLoading(false);
   }
 
+  // 🏁 IFS STANDARTLARINDA SESSİZ KAPANIŞ
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
     
-    // Durdurulsa bile konumu al
     const pos = await getGpsPosition();
+    const bitisZamani = new Date();
+    const baslangicZamani = ihbar?.kabul_tarihi ? new Date(ihbar.kabul_tarihi) : bitisZamani;
+    const farkDakika = Math.round((bitisZamani.getTime() - baslangicZamani.getTime()) / 60000);
     
-    let sure = (ihbar?.kabul_tarihi) 
-      ? Math.round((new Date().getTime() - new Date(ihbar.kabul_tarihi).getTime()) / 60000) 
-      : null;
+    const gunMetni = farkDakika > 1440 ? "1 Gün ve Üzeri" : "1 Günden Kısa";
+
+    // İş İstasyonu Mapping (201, 202, 204)
+    let isIstasyonuKodu = "202"; 
+    const grupIsmi = ihbar.calisma_gruplari?.grup_adi?.toUpperCase() || "";
+    
+    if (grupIsmi.includes("BİNA")) {
+      isIstasyonuKodu = "204";
+    } else if (grupIsmi.includes("ELEKTRİK")) {
+      isIstasyonuKodu = "201";
+    }
 
     const { error } = await supabase.from('ihbarlar').update({ 
       durum: stat, 
       personel_notu: personelNotu, 
-      kapatma_tarihi: new Date().toISOString(), 
+      kapatma_tarihi: bitisZamani.toISOString(), 
       bitis_enlem: pos?.lat || null, 
       bitis_boylam: pos?.lng || null, 
-      calisma_suresi_dakika: sure 
+      calisma_suresi_dakika: farkDakika,
+      fiili_sure_gun_metni: gunMetni,
+      is_istasyonu: isIstasyonuKodu,
+      ie_sitesi: 30,
+      is_emri_turu: 'Arizi bakim/Ariza Talebi',
+      baglanti_turu: 'Ekipman',
+      statu: 'Bitirildi'
     }).eq('id', id);
 
     if (!error) { 
-      alert(stat === 'Tamamlandi' ? "İŞ BİTİRİLDİ ✅" : "İŞ DURDURULDU ⚠️");
-      if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData(); 
+      router.push('/dashboard'); 
+    } else {
+      alert("Hata: " + error.message);
     }
     setLoading(false);
   }
