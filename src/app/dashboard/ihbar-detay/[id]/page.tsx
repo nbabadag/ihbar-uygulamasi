@@ -43,7 +43,7 @@ export default function IhbarDetay() {
   const canEditIhbar = isCagriMerkezi || isAdmin || isMudur; 
   const canEditAssignment = canEditIhbar || normalizedRole.includes('MÜH') || normalizedRole.includes('FORMEN');
   
-  // 🚀 VARDİYA MODU YETKİ MÜHÜRÜ: Atanmamış Vardiya İhbarlarını Ekip Alabilir
+  // 🚀 VARDİYA MODU YETKİ MÜHÜRÜ
   const isVardiyaHavuz = ihbar?.oncelik_durumu === 'VARDİYA_MODU' && !ihbar.atanan_personel;
   const canStartJob = !isCagriMerkezi && (
     ihbar?.atanan_personel === userId || 
@@ -138,11 +138,32 @@ export default function IhbarDetay() {
 
   const malzemeSil = async (mId: string) => { await supabase.from('ihbar_malzemeleri').delete().eq('id', mId); fetchData(); };
 
+  // 🛡️ GÜNCELLENMİŞ İŞE BAŞLAMA MANTIĞI (Çakışma Kontrollü)
   const isiBaslat = async () => {
     setLoading(true);
+
+    // 1. Üzerinde aktif iş var mı kontrolü
+    const { data: aktifIsler } = await supabase
+      .from('ihbarlar')
+      .select('id, konu')
+      .eq('atanan_personel', userId)
+      .eq('durum', 'Calisiliyor')
+      .neq('id', id);
+
+    if (aktifIsler && aktifIsler.length > 0) {
+      setLoading(false);
+      const git = confirm(
+        `⚠️ DİKKAT: Üzerinizde halen açık bir iş var: "${aktifIsler[0].konu}"\n\n` +
+        `Yeni işe başlamak için mevcut işi DURDURMANIZ veya BİTİRMENİZ gerekir.\n\n` +
+        `Mevcut işe gidip kapatmak ister misiniz?`
+      );
+      if (git) router.push(`/ihbarlar/${aktifIsler[0].id}`);
+      return;
+    }
+
     const pos = await getGpsPosition();
     
-    // 🚀 HAVUZDAN ALMA MANTIĞI: Eğer atanan yoksa personeli otomatik ata
+    // 2. Havuzdan alma veya normal başlatma mühürü
     const guncelleme: any = {
       durum: 'Calisiliyor', 
       kabul_tarihi: new Date().toISOString(), 
@@ -179,17 +200,27 @@ export default function IhbarDetay() {
   const isiKapatVeyaDurdur = async (stat: 'Tamamlandi' | 'Durduruldu') => {
     if (!personelNotu) return alert("İşlem notu zorunludur.");
     setLoading(true);
-    const pos = stat === 'Tamamlandi' ? await getGpsPosition() : null;
-    let sure = (stat === 'Tamamlandi' && ihbar?.kabul_tarihi) ? Math.round((new Date().getTime() - new Date(ihbar.kabul_tarihi).getTime()) / 60000) : null;
+    
+    // Durdurulsa bile konumu al
+    const pos = await getGpsPosition();
+    
+    let sure = (ihbar?.kabul_tarihi) 
+      ? Math.round((new Date().getTime() - new Date(ihbar.kabul_tarihi).getTime()) / 60000) 
+      : null;
+
     const { error } = await supabase.from('ihbarlar').update({ 
       durum: stat, 
       personel_notu: personelNotu, 
-      kapatma_tarihi: stat === 'Tamamlandi' ? new Date().toISOString() : null, 
+      kapatma_tarihi: new Date().toISOString(), 
       bitis_enlem: pos?.lat || null, 
       bitis_boylam: pos?.lng || null, 
       calisma_suresi_dakika: sure 
     }).eq('id', id);
-    if (!error) { if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData(); }
+
+    if (!error) { 
+      alert(stat === 'Tamamlandi' ? "İŞ BİTİRİLDİ ✅" : "İŞ DURDURULDU ⚠️");
+      if (stat === 'Tamamlandi') router.push('/dashboard'); else await fetchData(); 
+    }
     setLoading(false);
   }
 
@@ -210,7 +241,6 @@ export default function IhbarDetay() {
     setLoading(false);
   }
 
-  // 📍 HARİTA LİNKİ OLUŞTURUCU
   const openMaps = () => {
     if (ihbar?.guncel_konum && !ihbar.guncel_konum.includes('Reddedildi')) {
       window.open(`https://www.google.com/maps?q=${ihbar.guncel_konum}`, '_blank');
@@ -227,12 +257,9 @@ export default function IhbarDetay() {
         
         <div className="flex justify-between items-center bg-[#111318] p-5 rounded-2xl border border-gray-800 shadow-2xl">
           <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-2.5 rounded-xl text-[10px]">← GERİ</button>
-          
-          {/* 📍 HARİTADA GÖR BUTONU */}
           {ihbar.guncel_konum && (
             <button onClick={openMaps} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[10px] animate-pulse">📍 HARİTADA GÖR</button>
           )}
-          
           <div className="text-[10px] flex items-center gap-4">
              <span className="text-gray-500 italic uppercase font-black tracking-widest">ATANAN: {ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZDA'}</span>
           </div>
@@ -243,7 +270,6 @@ export default function IhbarDetay() {
             <div className="bg-[#1a1c23] p-6 md:p-8 rounded-[2.5rem] border border-gray-800 shadow-2xl">
               <h1 className="text-3xl md:text-4xl mb-4 tracking-tighter text-orange-500">{ihbar.ihbar_veren_ad_soyad}</h1>
 
-              {/* VARDİYA MODU UYARI BANDI */}
               {isVardiyaHavuz && (
                 <div className="bg-orange-600/20 border border-orange-500 p-4 rounded-2xl mb-6 text-center">
                   <p className="text-[10px] text-orange-500 animate-pulse font-black">🚨 BU BİR VARDİYA İHBARIDIR. DOĞRUDAN ÜSTLENEBİLİRSİNİZ.</p>
@@ -260,7 +286,6 @@ export default function IhbarDetay() {
                 </a>
               )}
 
-              {/* YARDIMCI PERSONEL VE DİĞER ALANLAR AYNI KALDI */}
               <div className="bg-[#111318] p-6 rounded-3xl border border-orange-500/20 mb-8">
                 <p className="text-orange-500 text-[10px] mb-4 tracking-widest uppercase italic">👥 YARDIMCI PERSONEL (EKİP)</p>
                 <div className="flex flex-wrap gap-2 mb-4 font-black">
@@ -310,7 +335,6 @@ export default function IhbarDetay() {
                 )}
               </div>
 
-              {/* MALZEME BÖLÜMÜ AYNI KALDI */}
               {ihbar.durum === 'Calisiliyor' && ihbar.varis_tarihi && (
                 <div className="pt-8 border-t border-gray-800 space-y-6">
                   <p className="text-orange-500 text-[10px] tracking-widest font-black uppercase italic">📦 MALZEME KULLANIMI</p>
