@@ -35,6 +35,25 @@ export default function Raporlar() {
     setLoading(false);
   }
 
+  // 📥 EXCEL (CSV) İNDİRME FONKSİYONU
+  const excelIndir = () => {
+    const headers = ["IS_EMRI_NO", "KONU", "NESNE", "ISTASYON", "BASLANGIC", "BITIS", "SURE_DK", "DURUM"];
+    const rows = data.map(i => [
+      i.ifs_is_emri_no, i.konu, i.secilen_nesne_adi, i.is_istasyonu, 
+      i.kabul_tarihi, i.kapama_tarihi, i.calisma_suresi_dakika, i.durum
+    ]);
+
+    let csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Saha360_Rapor_${new Date().toLocaleDateString()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   const workshopData = [
     { name: 'ELEKTRİK (201)', value: data.filter(d => d.is_istasyonu?.includes('201')).length, color: '#3b82f6' },
     { name: 'MEKANİK (202)', value: data.filter(d => d.is_istasyonu?.includes('202')).length, color: '#ea580c' },
@@ -56,31 +75,41 @@ export default function Raporlar() {
     z: e.count
   })).sort((a,b) => b.y - a.y).slice(0, 25);
 
-  // 🛡️ ÖZEL TOOLTIP BİLEŞENİ (Boş ekranı çözen mühür)
+  // 🛡️ DÜZELTİLMİŞ CUSTOM TOOLTIP (Boş kutu hatası giderildi)
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const item = payload[0].payload;
       return (
-        <div className="bg-black border border-gray-700 p-4 rounded-2xl shadow-2xl font-black italic uppercase">
-          <p className="text-orange-500 text-[10px] mb-2 border-b border-gray-800 pb-1">{item.name}</p>
-          <p className="text-white text-xs">ARIZA: <span className="text-blue-400">{item.x || item.value}</span></p>
-          {item.y && <p className="text-white text-xs">ORT. SÜRE: <span className="text-red-400">{item.y} DK</span></p>}
+        <div className="bg-[#111318] border border-orange-500/50 p-4 rounded-xl shadow-2xl font-black italic uppercase min-w-[200px]">
+          <p className="text-orange-500 text-[10px] mb-2 border-b border-gray-800 pb-1">{item.name || item.payload?.name}</p>
+          <div className="space-y-1">
+            <p className="text-white text-[10px]">ADET: <span className="text-blue-400">{item.x || item.value}</span></p>
+            {item.y && <p className="text-white text-[10px]">ORT. SÜRE: <span className="text-red-400">{item.y} DK</span></p>}
+          </div>
         </div>
       );
     }
     return null;
   };
 
-  if (loading) return <div className="min-h-screen bg-[#0a0b0e] flex items-center justify-center text-orange-500 font-black italic uppercase">ANALİZ EDİLİYOR...</div>
+  if (loading) return <div className="min-h-screen bg-[#0a0b0e] flex items-center justify-center text-orange-500 font-black italic uppercase animate-pulse">VERİLER MÜHÜRLENİYOR...</div>
 
   return (
     <div className="min-h-screen bg-[#06070a] text-white p-6 md:p-12 font-black uppercase italic">
-      <div className="max-w-[1600px] mx-auto space-y-12">
-        <div className="flex justify-between items-center border-b-2 border-orange-500 pb-8">
-          <h1 className="text-4xl">SAHA <span className="text-orange-500 text-outline">ANALİTİK</span></h1>
-          <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-8 py-3 rounded-full text-[10px]">DASHBOARD</button>
+      <div className="max-w-[1600px] mx-auto space-y-10">
+        
+        {/* ÜST PANEL */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-6 border-b-2 border-orange-500 pb-8">
+          <h1 className="text-4xl tracking-tighter">SAHA <span className="text-orange-500 text-outline">ANALİTİK</span></h1>
+          <div className="flex gap-4">
+            <button onClick={excelIndir} className="bg-green-600 px-6 py-3 rounded-full text-[10px] hover:bg-green-700 transition-all flex items-center gap-2">
+              📊 EXCEL İNDİR
+            </button>
+            <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-6 py-3 rounded-full text-[10px]">DASHBOARD</button>
+          </div>
         </div>
 
+        {/* KPI KARTLARI */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-[#111318] p-8 rounded-[2rem] border-l-4 border-orange-600">
             <p className="text-[10px] text-gray-500 mb-2">TOPLAM İŞ</p>
@@ -100,6 +129,7 @@ export default function Raporlar() {
           </div>
         </div>
 
+        {/* GRAFİKLER */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 bg-[#111318] p-10 rounded-[3rem] border border-gray-800">
             <h3 className="text-xs mb-10 border-l-4 border-orange-500 pl-4">ATÖLYE YÜKÜ</h3>
