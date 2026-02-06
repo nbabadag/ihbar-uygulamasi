@@ -1,234 +1,182 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  ScatterChart, Scatter, ZAxis, Cell, LineChart, Line, AreaChart, Area
+} from 'recharts'
 
-// TypeScript Tip Tanımlamaları
-interface AIMetrikleri {
-  enCokAriza: string;
-  adet: number;
-  aiDogruluk: number;
-}
-
-export default function RaporlarPage() {
+export default function Raporlar() {
   const router = useRouter()
-  const [mod, setMod] = useState<'ariza' | 'personel' | 'hepsi'>('ariza')
-  const [baslangic, setBaslangic] = useState('')
-  const [bitis, setBitis] = useState('')
-  const [yukleniyor, setYukleniyor] = useState(false)
-  const [raporVerisi, setRaporVerisi] = useState<any[]>([])
-  const [izlendi, setIzlendi] = useState(false)
-  const [authYukleniyor, setAuthYukleniyor] = useState(true)
+  const [data, setData] = useState<any[]>([])
+  const [stats, setStats] = useState({ total: 0, avgTime: 0, bottleneck: '', activeJobs: 0 })
+  const [loading, setLoading] = useState(true)
 
-  // 🛡️ YETKİ KONTROLÜ
   useEffect(() => {
-    const checkUserAccess = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { router.push('/'); return; }
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-        const yetkiliRoller = ['Admin', 'Müdür', 'Mühendis-Yönetici', 'Formen'];
-        if (!yetkiliRoller.includes(profile?.role?.trim() || '')) { router.push('/dashboard'); return; }
-        setAuthYukleniyor(false)
-      } catch (err) { router.push('/dashboard') }
-    }
-    checkUserAccess()
-  }, [router])
+    fetchStats()
+  }, [])
 
-  // 🧮 HESAPLAMA MOTORLARI
-  const dakikaHesapla = (bas: string, bit: string) => {
-    if (!bas || !bit) return 0;
-    const fark = (new Date(bit).getTime() - new Date(bas).getTime()) / 60000;
-    return fark > 0 ? Math.round(fark) : 0;
-  }
-
-  const formatTime = (dateStr: string) => {
-    if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  }
-
-  // 🤖 AI ÖZET KARTLARI (TypeScript Uyumlu)
-  const aiMetrikleri = useMemo<AIMetrikleri | null>(() => {
-    if (raporVerisi.length === 0) return null;
-    const nesneSayilari: Record<string, number> = {};
-    raporVerisi.forEach(i => { 
-      if (i.secilen_nesne_adi) {
-        nesneSayilari[i.secilen_nesne_adi] = (nesneSayilari[i.secilen_nesne_adi] || 0) + 1;
-      }
-    });
-    const enCok = Object.entries(nesneSayilari).sort((a, b) => b[1] - a[1])[0];
-    return {
-      enCokAriza: enCok ? String(enCok[0]) : 'TANIMSIZ',
-      adet: enCok ? Number(enCok[1]) : 0,
-      aiDogruluk: 94 
-    };
-  }, [raporVerisi]);
-
-  // 🛰️ VERİ SORGULAMA
-  const raporuSorgula = async () => {
-    if (!baslangic || !bitis) return alert("LÜTFEN TARİH ARALIĞI SEÇİN!")
-    setYukleniyor(true)
-    setIzlendi(false)
-
+  const fetchStats = async () => {
     const { data: ihbarlar, error } = await supabase
       .from('ihbarlar')
-      .select(`
-        *, 
-        profiles:atanan_personel (full_name), 
-        ihbar_malzemeleri (malzeme_adi, kullanim_adedi)
-      `)
-      .gte('created_at', `${baslangic}T00:00:00`)
-      .lte('created_at', `${bitis}T23:59:59`)
-      .order('id', { ascending: true })
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (error) {
-      alert("Sorgu Hatası: " + error.message)
-    } else if (ihbarlar) {
-      setRaporVerisi(ihbarlar)
-      setIzlendi(true)
+    if (ihbarlar) {
+      setData(ihbarlar);
+      const finished = ihbarlar.filter(i => i.durum === 'Tamamlandi');
+      const total = finished.length;
+      const totalMin = finished.reduce((acc, curr) => acc + (curr.calisma_suresi_dakika || 0), 0);
+      const avg = total > 0 ? totalMin / total : 0;
+      
+      // Darboğaz Ekipman Tespiti (Excel Mantığı)
+      const counts: any = {};
+      finished.forEach(i => { 
+        if(i.secilen_nesne_adi) counts[i.secilen_nesne_adi] = (counts[i.secilen_nesne_adi] || 0) + 1 
+      });
+      const sorted = Object.entries(counts).sort((a: any, b: any) => b[1] - a[1]);
+
+      setStats({ 
+        total, 
+        avgTime: Math.round(avg), 
+        bottleneck: sorted[0] ? String(sorted[0][0]) : '-',
+        activeJobs: ihbarlar.filter(i => i.durum === 'Calisiliyor').length
+      });
     }
-    setYukleniyor(false)
+    setLoading(false);
   }
 
-  // 📥 EXCEL MOTORU
-  const excelIndir = () => {
-    if (raporVerisi.length === 0) return
-    const sayfa1Data = raporVerisi.map(i => {
-      const mudahaleSuresi = dakikaHesapla(i.created_at, i.kabul_tarihi);
-      if (mod === 'ariza') {
-        return {
-          "İhbar ID": i.id, "İhbar Tarih Saat": formatTime(i.created_at), "Atama Tarih Saat": formatTime(i.atama_tarihi),
-          "İşe Başlama Saat": formatTime(i.kabul_tarihi), "İş Bitiş Saat": formatTime(i.kapatma_tarihi),
-          "Müdahale Süresi (DK)": mudahaleSuresi, "Teknik Nesne": i.secilen_nesne_adi,
-          "Atanan": i.profiles?.full_name, "Yardımcı": i.yardimcilar?.join(', '),
-          "Malzeme": i.ihbar_malzemeleri?.map((m: any) => `${m.kullanim_adedi}x ${m.malzeme_adi}`).join(' | ')
-        };
-      } else if (mod === 'personel') {
-        return {
-          "İhbar Zamanı": formatTime(i.created_at), "Teknik Nesne": i.secilen_nesne_adi,
-          "Atanan": i.profiles?.full_name, "Yardımcı": i.yardimcilar?.join(', '),
-          "Çalışma Süresi (DK)": i.calisma_suresi_dakika || 0
-        };
-      } else {
-        return { ...i, "Müdahale": mudahaleSuresi };
-      }
-    });
+  // 1. İş İstasyonu Verimliliği (201, 202, 204)
+  const workshopData = [
+    { name: 'ELEKTRİK (201)', count: data.filter(d => d.is_istasyonu === '201').length, color: '#3b82f6' },
+    { name: 'MEKANİK (202)', count: data.filter(d => d.is_istasyonu === '202').length, color: '#ea580c' },
+    { name: 'BİNA (204)', count: data.filter(d => d.is_istasyonu === '204').length, color: '#10b981' },
+  ];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sayfa1Data), "Rapor");
-    XLSX.writeFile(wb, `Saha360_Rapor_${mod.toUpperCase()}.xlsx`);
-  }
+  // 2. Darboğaz Analizi (Scatter Plot)
+  const equipmentStats = data.filter(i => i.durum === 'Tamamlandi').reduce((acc: any, curr) => {
+    const key = curr.secilen_nesne_adi || 'Bilinmiyor';
+    if (!acc[key]) acc[key] = { name: key, count: 0, totalTime: 0 };
+    acc[key].count += 1;
+    acc[key].totalTime += (curr.calisma_suresi_dakika || 0);
+    return acc;
+  }, {});
 
-  if (authYukleniyor) return null;
+  const scatterData = Object.values(equipmentStats).map((e: any) => ({
+    name: e.name,
+    x: e.count, // Arıza Sayısı
+    y: Math.round(e.totalTime / e.count), // Ort. Süre
+    z: e.count
+  })).sort((a,b) => b.x - a.x).slice(0, 20);
+
+  if (loading) return (
+    <div className="min-h-screen bg-[#0a0b0e] flex items-center justify-center">
+      <div className="text-orange-500 animate-pulse font-black italic uppercase tracking-[0.5em]">VERİ HAVUZU ANALİZ EDİLİYOR...</div>
+    </div>
+  )
 
   return (
-    <div className="min-h-screen bg-[#0a0b0e] flex flex-col md:flex-row text-white font-black italic uppercase">
-      {/* SIDEBAR */}
-      <div className="w-full md:w-64 bg-[#111318] p-6 border-r border-gray-800 flex flex-col z-50">
-        <h2 className="text-orange-500 mb-10 text-xl font-black italic">SAHA 360 // ANALİZ</h2>
-        <nav className="space-y-4">
-          <button onClick={() => router.push('/dashboard')} className="w-full p-4 hover:bg-orange-600 rounded-2xl text-left border border-gray-800 transition-all font-black uppercase italic">🏠 ANA SAYFA</button>
-          <div className="p-4 bg-orange-600 rounded-2xl font-black border border-orange-400 shadow-lg">📊 RAPORLAMA</div>
-        </nav>
-      </div>
-
-      <div className="flex-1 p-4 md:p-10 overflow-y-auto">
-        <header className="flex flex-col md:flex-row justify-between items-center bg-[#111318]/60 p-6 rounded-[2.5rem] border border-gray-800 mb-8 gap-4">
-          <div><h1 className="text-2xl md:text-4xl font-black italic">STRATEJİK VERİ YÖNETİMİ</h1><p className="text-[10px] text-orange-500 font-black italic">Operasyonel Veri Senkronizasyonu</p></div>
-          <button onClick={excelIndir} disabled={!izlendi} className="bg-green-600 px-8 py-4 rounded-3xl font-black text-xs active:scale-95 disabled:opacity-20 transition-all">📥 EXCEL İNDİR</button>
-        </header>
-
-        {/* AI KARTLARI */}
-        {izlendi && aiMetrikleri && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-[#111318] p-8 rounded-[3rem] border border-orange-500/20 relative overflow-hidden">
-              <span className="text-[10px] text-orange-500 font-black">🚨 KRONİK ARIZA ODAĞI</span>
-              <h2 className="text-2xl mt-2 font-black italic truncate">{aiMetrikleri.enCokAriza}</h2>
-              <p className="text-[9px] text-gray-500 mt-1">{String(aiMetrikleri.adet)} TEKRARLANAN KAYIT</p>
-            </div>
-            <div className="bg-[#111318] p-8 rounded-[3rem] border border-blue-500/20">
-              <span className="text-[10px] text-blue-400 font-black">📊 SORGULANAN HACİM</span>
-              <h2 className="text-5xl mt-2 font-black italic">{raporVerisi.length} <span className="text-xs">İŞ</span></h2>
-            </div>
-            <div className="bg-[#111318] p-8 rounded-[3rem] border border-green-500/20">
-              <span className="text-[10px] text-green-500 font-black">🧠 AI TAHMİN GÜCÜ</span>
-              <h2 className="text-5xl mt-2 font-black italic">%{String(aiMetrikleri.aiDogruluk)}</h2>
-            </div>
+    <div className="min-h-screen bg-[#0a0b0e] text-white p-4 md:p-10 font-black uppercase italic">
+      <div className="max-w-7xl mx-auto space-y-10">
+        
+        {/* HEADER */}
+        <div className="flex justify-between items-end border-b border-gray-800 pb-6">
+          <div>
+            <h1 className="text-4xl tracking-tighter text-white">SAHA <span className="text-orange-500">360</span> ANALİTİK</h1>
+            <p className="text-[10px] text-gray-500 tracking-[0.3em] mt-2">IFS TABANLI OPERASYONEL VERİMLİLİK RAPORU</p>
           </div>
-        )}
-
-        {/* MOD SEÇİCİ */}
-        <div className="flex bg-[#111318] p-2 rounded-[2rem] border border-gray-800 w-fit mb-8 gap-2">
-          {['ariza', 'personel', 'hepsi'].map(m => (
-            <button key={m} onClick={() => { setMod(m as any); setIzlendi(false); }} className={`px-8 py-3 rounded-2xl text-[10px] font-black italic uppercase transition-all ${mod === m ? 'bg-orange-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}>
-              {m === 'ariza' ? '🔧 ARIZA ODAKLI' : m === 'personel' ? '👤 PERSONEL ODAKLI' : '🌍 MASTER RAPOR'}
-            </button>
-          ))}
+          <button onClick={() => router.push('/dashboard')} className="bg-white text-black px-6 py-2 rounded-full text-[10px] hover:invert transition-all">DASHBOARD'A DÖN</button>
         </div>
 
-        {/* FİLTRE FORMU */}
-        <div className="bg-[#111318] p-8 rounded-[3rem] border border-gray-800 grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-          <input type="date" className="bg-black p-5 rounded-3xl border border-gray-700 outline-none text-white font-black italic" value={baslangic} onChange={e => setBaslangic(e.target.value)} />
-          <input type="date" className="bg-black p-5 rounded-3xl border border-gray-700 outline-none text-white font-black italic" value={bitis} onChange={e => setBitis(e.target.value)} />
-          <button onClick={raporuSorgula} className="bg-orange-600 rounded-3xl font-black italic uppercase active:scale-95">{yukleniyor ? 'ANALİZ EDİLİYOR...' : 'SİSTEM ANALİZİNİ BAŞLAT'}</button>
+        {/* ÜST KPI KARTLARI */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-[#111318] p-8 rounded-[2.5rem] border border-gray-800 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">📊</div>
+            <p className="text-gray-500 text-[10px] mb-2">BITEN İŞ EMRI</p>
+            <h2 className="text-5xl text-orange-500">{stats.total}</h2>
+          </div>
+          <div className="bg-[#111318] p-8 rounded-[2.5rem] border border-gray-800 border-t-blue-500 border-t-4">
+            <p className="text-gray-500 text-[10px] mb-2">MTTR (ORT. TAMIR)</p>
+            <h2 className="text-5xl text-blue-500">{stats.avgTime} <span className="text-sm">DK</span></h2>
+          </div>
+          <div className="bg-[#111318] p-8 rounded-[2.5rem] border border-gray-800 border-t-red-500 border-t-4">
+            <p className="text-gray-500 text-[10px] mb-2">DARBOĞAZ VARLIK</p>
+            <h2 className="text-sm text-red-500 leading-tight h-12 overflow-hidden">{stats.bottleneck}</h2>
+          </div>
+          <div className="bg-[#111318] p-8 rounded-[2.5rem] border border-gray-800">
+            <p className="text-gray-500 text-[10px] mb-2">SAHADA AKTIF</p>
+            <h2 className="text-5xl text-green-500">{stats.activeJobs} <span className="text-sm">EKIP</span></h2>
+          </div>
         </div>
 
-        {/* 📋 DİNAMİK VERİ TABLOSU (EXCEL İLE AYNI) */}
-        {izlendi && (
-          <div className="bg-[#111318] rounded-[3.5rem] border border-gray-800 overflow-hidden shadow-2xl overflow-x-auto mb-10">
-            <table className="w-full text-left border-collapse font-black italic uppercase">
-              <thead className="bg-black/40 text-orange-500 text-[9px] font-black italic">
-                {mod === 'ariza' ? (
-                  <tr>
-                    <th className="p-6">ID</th><th className="p-6">İHBAR ZAMANI</th><th className="p-6">ATAMA</th><th className="p-6">BAŞLAMA</th>
-                    <th className="p-6">BİTİŞ</th><th className="p-6 text-orange-400">MÜDAHALE (DK)</th><th className="p-6">NESNE</th>
-                    <th className="p-6">SORUMLU</th><th className="p-6">EKİP</th><th className="p-6">MALZEME</th>
-                  </tr>
-                ) : mod === 'personel' ? (
-                  <tr>
-                    <th className="p-6">İHBAR ZAMANI</th><th className="p-6">TEKNİK NESNE</th><th className="p-6">ATANAN</th>
-                    <th className="p-6">YARDIMCI</th><th className="p-6 text-orange-400">ÇALIŞMA (DK)</th>
-                  </tr>
-                ) : (
-                  <tr>
-                    <th className="p-6">ID</th><th className="p-6">ZAMAN</th><th className="p-6">NESNE</th>
-                    <th className="p-6">SORUMLU</th><th className="p-6">MÜDAHALE</th><th className="p-6">ÇALIŞMA</th>
-                  </tr>
-                )}
-              </thead>
-              <tbody className="divide-y divide-gray-900 text-[10px]">
-                {raporVerisi.map(i => (
-                  <tr key={i.id} className="hover:bg-white/[0.02] transition-colors">
-                    {mod === 'ariza' ? (
-                      <>
-                        <td className="p-6 text-orange-500">#{i.id}</td><td className="p-6">{formatTime(i.created_at)}</td>
-                        <td className="p-6">{formatTime(i.atama_tarihi)}</td><td className="p-6">{formatTime(i.kabul_tarihi)}</td>
-                        <td className="p-6">{formatTime(i.kapatma_tarihi)}</td>
-                        <td className="p-6 font-mono text-orange-400">{dakikaHesapla(i.created_at, i.kabul_tarihi)} DK</td>
-                        <td className="p-6 text-white">{i.secilen_nesne_adi}</td><td className="p-6">{i.profiles?.full_name}</td>
-                        <td className="p-6 opacity-60 text-[8px]">{i.yardimcilar?.join(', ')}</td>
-                        <td className="p-6 text-blue-400 text-[8px]">{i.ihbar_malzemeleri?.map((m: any) => `${m.kullanim_adedi}x${m.malzeme_adi}`).join(', ')}</td>
-                      </>
-                    ) : mod === 'personel' ? (
-                      <>
-                        <td className="p-6">{formatTime(i.created_at)}</td><td className="p-6 text-white">{i.secilen_nesne_adi}</td>
-                        <td className="p-6">{i.profiles?.full_name}</td><td className="p-6">{i.yardimcilar?.join(', ')}</td>
-                        <td className="p-6 text-orange-400">{i.calisma_suresi_dakika || 0} DK</td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="p-6">#{i.id}</td><td className="p-6">{formatTime(i.created_at)}</td>
-                        <td className="p-6">{i.secilen_nesne_adi}</td><td className="p-6">{i.profiles?.full_name}</td>
-                        <td className="p-6">{dakikaHesapla(i.created_at, i.kabul_tarihi)}</td><td className="p-6">{i.calisma_suresi_dakika}</td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* GRAFİKLER */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          
+          {/* ATÖLYE DAĞILIMI */}
+          <div className="bg-[#111318] p-10 rounded-[3rem] border border-gray-800 shadow-2xl">
+            <h3 className="text-[10px] mb-10 tracking-[0.3em] text-gray-500 uppercase">ATÖLYE İŞ YÜKÜ DAĞILIMI</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={workshopData} layout="vertical">
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" stroke="#555" fontSize={10} width={100} />
+                  <Tooltip cursor={{fill: 'transparent'}} contentStyle={{backgroundColor: '#000', border: 'none', fontSize: '10px'}} />
+                  <Bar dataKey="count" radius={[0, 10, 10, 0]} barSize={30}>
+                    {workshopData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        )}
+
+          {/* DARBOĞAZ ANALİZİ (SCATTER) */}
+          <div className="bg-[#111318] p-10 rounded-[3rem] border border-gray-800 shadow-2xl">
+            <h3 className="text-[10px] mb-10 tracking-[0.3em] text-gray-500 uppercase">DARBOĞAZ TESPİTİ (ARIZA VS SÜRE)</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                  <CartesianGrid stroke="#222" vertical={false} />
+                  <XAxis type="number" dataKey="x" name="ARIZA SAYISI" stroke="#555" fontSize={10} label={{ value: 'ARIZA SAYISI', position: 'insideBottom', offset: -10, fontSize: 8, fill: '#555' }} />
+                  <YAxis type="number" dataKey="y" name="ORT. SÜRE" stroke="#555" fontSize={10} label={{ value: 'ORT. SÜRE (DK)', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#555' }} />
+                  <ZAxis type="number" dataKey="z" range={[100, 1000]} />
+                  <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{backgroundColor: '#000', border: 'none', fontSize: '10px'}} />
+                  <Scatter name="EKİPMANLAR" data={scatterData}>
+                    {scatterData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.y > stats.avgTime * 1.3 ? '#ef4444' : '#3b82f6'} />
+                    ))}
+                  </Scatter>
+                </ScatterChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+        </div>
+
+        {/* KRİTİK LİSTE */}
+        <div className="bg-[#111318] p-10 rounded-[3rem] border border-gray-800">
+          <div className="flex justify-between items-center mb-10">
+            <h3 className="text-[10px] tracking-[0.3em] text-gray-500">EN ÇOK ZAMAN KAYBETTİREN 10 VARLIK</h3>
+            <span className="text-[8px] bg-red-900/30 text-red-500 px-3 py-1 rounded-full">KRİTİK MÜDAHALE GEREKLI</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            {scatterData.slice(0, 10).map((e: any, idx: number) => (
+              <div key={idx} className="bg-black/40 p-6 rounded-[2rem] border border-gray-900 hover:border-orange-500 transition-all group">
+                <p className="text-[9px] text-gray-600 mb-4 group-hover:text-orange-500 transition-all truncate">{e.name}</p>
+                <div className="flex justify-between items-end">
+                  <span className="text-3xl font-black">{e.x}</span>
+                  <div className="text-right">
+                    <p className="text-[8px] text-gray-500">ORT. SÜRE</p>
+                    <p className="text-sm text-blue-400">{e.y} DK</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
       </div>
     </div>
   )
