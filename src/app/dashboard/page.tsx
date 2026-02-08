@@ -56,9 +56,10 @@ export default function DashboardPage() {
     return null;
   };
 
-  const fetchData = useCallback(async (role: string, id: string) => {
+const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
+    // 1. Kullanıcı Gruplarını Getir
     const { data: userGroupData } = await supabase
       .from('grup_uyeleri')
       .select('grup_id, calisma_gruplari(grup_adi)')
@@ -68,13 +69,15 @@ export default function DashboardPage() {
     const groupNames = userGroupData?.map((g: any) => g.calisma_gruplari?.grup_adi).filter(Boolean) || [];
     setUserGroups(groupNames); 
 
+    // 2. AI Kombinasyonlarını Getir
     const { data: komboData } = await supabase.from('ai_kombinasyonlar').select('*');
     if (komboData) setAiKombinasyonlar(komboData);
 
+    // 3. İhbarları Getir
     const { data: ihbarData } = await supabase
       .from('ihbarlar')
       .select(`*, profiles:atanan_personel(full_name), calisma_gruplari:atanan_grup_id(grup_adi)`)
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: false });
 
     if (ihbarData) {
       const simdi = new Date();
@@ -94,41 +97,68 @@ export default function DashboardPage() {
           if (d.includes('tamamlandi')) {
             return i.atanan_personel === id;
           }
-
           return isAtanmis || isVardiyaHavuzaDustu;
         });
       }
 
-      setIhbarlar(filtered)
+      setIhbarlar(filtered);
 
       setStats({
-        bekleyen: filtered.filter(i => 
-          (i.durum || '').toLowerCase().includes('beklemede') && 
-          i.atanan_personel === null && 
-          i.atanan_grup_id === null
-        ).length,
+        bekleyen: filtered.filter(i => (i.durum || '').toLowerCase().includes('beklemede') && i.atanan_personel === null && i.atanan_grup_id === null).length,
         tamamlanan: filtered.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).length,
         islemde: filtered.filter(i => {
           const d = (i.durum || '').toLowerCase();
           return !d.includes('tamamlandi') && (i.atanan_personel !== null || i.atanan_grup_id !== null || d.includes('calisiliyor') || d.includes('durduruldu'));
         }).length
-      })
+      });
     }
 
-    const cleanRole = role.trim();
-    const roleUpperForB = cleanRole.toUpperCase();
-    
-    const { data: bData, count } = await supabase
+    // 4. BİLDİRİMLERİ GETİR (GÜNCEL SÜZGEÇ)
+    const rawRole = role.trim().toUpperCase();
+    let roleToSearch = rawRole;
+
+    // --- ROL EŞLEŞTİRME (MAPPING) MÜHÜRÜ ---
+    // Eğer gelen rol içinde "ÇAĞRI" geçiyorsa, veritabanındaki "ÇAĞRI" etiketiyle eşleştir
+    if (rawRole.includes('ÇAĞRI') || rawRole.includes('CAGRI')) {
+      roleToSearch = 'ÇAĞRI'; 
+    }
+    // Eğer rol "MÜHENDİS-YÖNETİCİ" ise ve bazen sadece "ADMIN" diye bildirim geliyorsa:
+    if (rawRole.includes('MÜHENDİS') || rawRole.includes('YÖNETİCİ')) {
+      // Buraya ihtiyaca göre ekleme yapabilirsin
+    }
+
+    const { data: bData, count, error } = await supabase
       .from('bildirimler')
       .select('*', { count: 'exact' })
       .eq('is_read', false)
-      .filter('hedef_roller', 'ov', `{${roleUpperForB}}`) 
+      // Burada roleToSearch değişkenini kullanıyoruz
+      .contains('hedef_roller', [roleToSearch]) 
       .order('created_at', { ascending: false })
-      .limit(20)
+      .limit(20);
+
+    // Konsol çıktıları (Lokal ve Canlıda takip için)
+    console.log("Profildeki Ham Rol:", rawRole);
+    console.log("Sorgulanan Düzenlenmiş Rol:", roleToSearch);
+    console.log("Bulunan Bildirim Sayısı:", count);
+    
+    if (error) {
+      console.error("Supabase Sorgu Hatası:", error.message);
+    }
 
     setBildirimSayisi(count || 0);
-    setBildirimler(bData || [])
-  }, []);
+    setBildirimler(bData || []);
+
+  }, [supabase]);
+
+  const bildirimOkunduYap = async (bildirimId: string) => {
+  await supabase
+    .from('bildirimler')
+    .update({ is_read: true })
+    .eq('id', bildirimId);
+  
+  // Listeyi güncellemek için fetchData'yı tekrar çağırabilirsin
+  fetchData(userRole!, userId!);
+};
 
   useEffect(() => {
     let channel: any;
@@ -314,18 +344,26 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
     );
 }
 
-  const NavButton = ({ label, icon, path, onClick, active = false }: any) => (
-    <div 
-      onClick={onClick || (() => router.push(path))}
-      className={`group flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all border shadow-lg active:scale-95 ${active ? 'bg-orange-600 border-orange-400 text-white' : 'bg-[#1a1c23] border-gray-800 text-gray-400 hover:border-orange-500/50 hover:text-white'}`}
-    >
-      <div className="flex items-center gap-3">
-        <span className={`text-lg ${active ? 'text-white' : 'text-orange-500 group-hover:scale-110 transition-transform'}`}>{icon}</span>
-        <span className="text-[11px] font-black uppercase italic tracking-tighter">{label}</span>
-      </div>
-      <span className="text-[10px] opacity-30 group-hover:opacity-100 transition-opacity">→</span>
+  const NavButton = ({ label, icon, path, onClick, active = false, count = 0 }: any) => (
+  <div 
+    onClick={onClick || (() => router.push(path))}
+    className={`group flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all border shadow-lg active:scale-95 relative ${active ? 'bg-orange-600 border-orange-400 text-white' : 'bg-[#1a1c23] border-gray-800 text-gray-400 hover:border-orange-500/50 hover:text-white'}`}
+  >
+    <div className="flex items-center gap-3">
+      <span className={`text-lg relative ${active ? 'text-white' : 'text-orange-500 group-hover:scale-110 transition-transform'}`}>
+        {icon}
+        {/* --- BİLDİRİM BALONU --- */}
+        {label === "Bildirimler" && count > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse border border-gray-900">
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
+      </span>
+      <span className="text-[11px] font-black uppercase italic tracking-tighter">{label}</span>
     </div>
-  )
+    <span className="text-[10px] opacity-30 group-hover:opacity-100 transition-opacity">→</span>
+  </div>
+)
 
   return (
     <div className="h-screen w-screen flex text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
@@ -340,7 +378,12 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
 
         <nav className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
           {canSeeMap && <NavButton label="Saha Haritası" icon="🛰️" path="/dashboard/saha-haritasi" active />}
-          <NavButton label="Bildirimler" icon="🔔" onClick={() => setIsBildirimAcik(true)} />
+          <NavButton 
+  label="Bildirimler" 
+  icon="🔔" 
+  onClick={() => setIsBildirimAcik(true)} 
+  count={bildirimSayisi} // Bildirim sayısını buraya ekledik
+/>
           <div className="h-px bg-gray-800 my-4 opacity-50"></div>
           {canCreateJob && <NavButton label="İhbar Kayıt" icon="📢" path="/dashboard/yeni-ihbar" />}
           {canManageUsers && <NavButton label="Personel Yönetimi" icon="👤" path="/dashboard/personel-yonetimi" />}
@@ -438,22 +481,42 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
         </div>
         <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2">
           {bildirimler.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-20 italic uppercase text-xs tracking-widest text-center">Yeni Bildirim Bulunmuyor</div>
+            <div className="h-full flex flex-col items-center justify-center opacity-20 italic uppercase text-xs tracking-widest text-center">
+              Yeni Bildirim Bulunmuyor
+            </div>
           ) : (
             bildirimler.map((b) => (
-              <div key={b.id} onClick={() => { router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); setIsBildirimAcik(false); }} className={`p-4 rounded-2xl border transition-all cursor-pointer bg-[#1a1c23] hover:border-orange-500/50 ${b.mesaj?.includes('DURDU') ? 'border-red-900/50' : 'border-green-900/50'}`}>
+              <div 
+                key={b.id} 
+                onClick={async () => { 
+                  await bildirimOkunduYap(b.id); 
+                  router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); 
+                  setIsBildirimAcik(false); 
+                }} 
+                className={`p-4 rounded-2xl border transition-all cursor-pointer bg-[#1a1c23] hover:border-orange-500/50 
+                  ${b.mesaj?.includes('DURDU') ? 'border-red-900/50 shadow-[0_0_10px_rgba(220,38,38,0.1)]' : 'border-green-900/50 shadow-[0_0_10px_rgba(22,163,74,0.1)]'}`}
+              >
                 <div className="flex justify-between items-start mb-2">
-                  <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white ${b.mesaj?.includes('DURDU') ? 'bg-red-600' : 'bg-green-600'}`}>{b.mesaj?.includes('DURDU') ? 'DURDU' : 'BİTTİ'}</span>
-                  <span className="text-[8px] font-bold text-gray-600 italic">{new Date(b.created_at).toLocaleTimeString('tr-TR')}</span>
+                  <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white 
+                    ${b.mesaj?.includes('DURDU') ? 'bg-red-600' : 'bg-green-600'}`}>
+                    {b.mesaj?.includes('DURDU') ? 'DURDU' : 'BİTTİ'}
+                  </span>
+                  <span className="text-[8px] font-bold text-gray-600 italic">
+                    {new Date(b.created_at).toLocaleTimeString('tr-TR')}
+                  </span>
                 </div>
-                <p className="text-[11px] font-black italic uppercase leading-tight mb-2 text-gray-200">{b.mesaj}</p>
+                
+                <p className="text-[11px] font-black italic uppercase leading-tight mb-2 text-gray-200">
+                  {b.mesaj}
+                </p>
+                
                 <div className="flex justify-between items-center text-[9px] font-black text-orange-500">
                   <span>KAYIT: #{b.ihbar_id}</span>
                   <span className="text-gray-500 italic">👤 {b.islem_yapan_ad || 'Sistem'}</span>
                 </div>
               </div>
             ))
-          )}
+          )} 
         </div>
       </div>
 
