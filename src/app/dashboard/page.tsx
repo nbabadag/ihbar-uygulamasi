@@ -3,6 +3,9 @@
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 import { useEffect, useState, useCallback, useRef } from 'react'
+// --- 📱 MOBİL BİLDİRİM IMPORTLARI ---
+import { PushNotifications } from '@capacitor/push-notifications'
+import { Capacitor } from '@capacitor/core'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -19,8 +22,43 @@ export default function DashboardPage() {
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [isBildirimAcik, setIsBildirimAcik] = useState(false)
   
-  // --- 🟢 ONLINE PERSONEL STATE ---
   const [onlineUsers, setOnlineUsers] = useState<any[]>([])
+
+  // --- 📱 MOBİL BİLDİRİM SİSTEMİ (MÜHÜR) ---
+  const initPushNotifications = useCallback(async (currentUserId: string) => {
+    if (Capacitor.getPlatform() === 'web') return; // Web'de çalışıyorsa durdur
+
+    // 1. İzinleri Kontrol Et ve İste
+    let permStatus = await PushNotifications.checkPermissions();
+    if (permStatus.receive === 'prompt') {
+      permStatus = await PushNotifications.requestPermissions();
+    }
+    if (permStatus.receive !== 'granted') return;
+
+    // 2. Cihazı Firebase'e Kaydet
+    await PushNotifications.register();
+
+    // 3. Token'ı Al ve Supabase'e Yaz
+    PushNotifications.addListener('registration', async (token) => {
+      console.log('Cihaz Token Alındı:', token.value);
+      const { error } = await supabase
+        .from('profiles') // Senin tablo adın 'profiles' olduğu için burayı güncelledim
+        .update({ fcm_token: token.value })
+        .eq('id', currentUserId);
+      
+      if (error) console.error("Token kaydedilirken hata:", error.message);
+    });
+
+    // 4. Hata Takibi
+    PushNotifications.addListener('registrationError', (error) => {
+      console.error('Push Kayıt Hatası:', error);
+    });
+
+    // 5. Uygulama Açıkken Bildirim Gelirse
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      console.log('Mobil Bildirim Geldi:', notification);
+    });
+  }, []);
 
   const playNotificationSound = useCallback(() => {
     const audio = new Audio('/notification.mp3');
@@ -56,10 +94,9 @@ export default function DashboardPage() {
     return null;
   };
 
-const fetchData = useCallback(async (role: string, id: string) => {
+  const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
-    // 1. Kullanıcı Gruplarını Getir
     const { data: userGroupData } = await supabase
       .from('grup_uyeleri')
       .select('grup_id, calisma_gruplari(grup_adi)')
@@ -69,11 +106,9 @@ const fetchData = useCallback(async (role: string, id: string) => {
     const groupNames = userGroupData?.map((g: any) => g.calisma_gruplari?.grup_adi).filter(Boolean) || [];
     setUserGroups(groupNames); 
 
-    // 2. AI Kombinasyonlarını Getir
     const { data: komboData } = await supabase.from('ai_kombinasyonlar').select('*');
     if (komboData) setAiKombinasyonlar(komboData);
 
-    // 3. İhbarları Getir
     const { data: ihbarData } = await supabase
       .from('ihbarlar')
       .select(`*, profiles:atanan_personel(full_name), calisma_gruplari:atanan_grup_id(grup_adi)`)
@@ -113,37 +148,20 @@ const fetchData = useCallback(async (role: string, id: string) => {
       });
     }
 
-    // 4. BİLDİRİMLERİ GETİR (GÜNCEL SÜZGEÇ)
     const rawRole = role.trim().toUpperCase();
     let roleToSearch = rawRole;
 
-    // --- ROL EŞLEŞTİRME (MAPPING) MÜHÜRÜ ---
-    // Eğer gelen rol içinde "ÇAĞRI" geçiyorsa, veritabanındaki "ÇAĞRI" etiketiyle eşleştir
     if (rawRole.includes('ÇAĞRI') || rawRole.includes('CAGRI')) {
       roleToSearch = 'ÇAĞRI'; 
-    }
-    // Eğer rol "MÜHENDİS-YÖNETİCİ" ise ve bazen sadece "ADMIN" diye bildirim geliyorsa:
-    if (rawRole.includes('MÜHENDİS') || rawRole.includes('YÖNETİCİ')) {
-      // Buraya ihtiyaca göre ekleme yapabilirsin
     }
 
     const { data: bData, count, error } = await supabase
       .from('bildirimler')
       .select('*', { count: 'exact' })
       .eq('is_read', false)
-      // Burada roleToSearch değişkenini kullanıyoruz
       .contains('hedef_roller', [roleToSearch]) 
       .order('created_at', { ascending: false })
       .limit(20);
-
-    // Konsol çıktıları (Lokal ve Canlıda takip için)
-    console.log("Profildeki Ham Rol:", rawRole);
-    console.log("Sorgulanan Düzenlenmiş Rol:", roleToSearch);
-    console.log("Bulunan Bildirim Sayısı:", count);
-    
-    if (error) {
-      console.error("Supabase Sorgu Hatası:", error.message);
-    }
 
     setBildirimSayisi(count || 0);
     setBildirimler(bData || []);
@@ -151,14 +169,9 @@ const fetchData = useCallback(async (role: string, id: string) => {
   }, [supabase]);
 
   const bildirimOkunduYap = async (bildirimId: string) => {
-  await supabase
-    .from('bildirimler')
-    .update({ is_read: true })
-    .eq('id', bildirimId);
-  
-  // Listeyi güncellemek için fetchData'yı tekrar çağırabilirsin
-  fetchData(userRole!, userId!);
-};
+    await supabase.from('bildirimler').update({ is_read: true }).eq('id', bildirimId);
+    fetchData(userRole!, userId!);
+  };
 
   useEffect(() => {
     let channel: any;
@@ -175,6 +188,9 @@ const fetchData = useCallback(async (role: string, id: string) => {
         setUserRole(currentRole)
         fetchData(currentRole, user.id)
         
+        // --- 📱 MOBİL BİLDİRİMİ TETİKLE ---
+        initPushNotifications(user.id);
+
         presenceChannel = supabase.channel('online-sync', {
             config: { presence: { key: 'user' } }
         })
@@ -212,21 +228,18 @@ const fetchData = useCallback(async (role: string, id: string) => {
       } else { router.push('/') }
     }
     checkUser()
-    const timer = setInterval(() => { 
-      setNow(new Date()); 
-    }, 60000)
+    const timer = setInterval(() => { setNow(new Date()); }, 60000)
 
     return () => { 
       clearInterval(timer); 
       if (channel) supabase.removeChannel(channel); 
       if (presenceChannel) supabase.removeChannel(presenceChannel);
     }
-  }, [router, fetchData, playNotificationSound])
+  }, [router, fetchData, playNotificationSound, initPushNotifications])
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/'); }
 
-const JobCard = ({ ihbar }: { ihbar: any }) => {
-    // --- ⏱️ SÜRE HESAPLAMA MANTIĞI (FİİLİ ÇALIŞMA ODAKLI) ---
+  const JobCard = ({ ihbar }: { ihbar: any }) => {
     const olusturmaTarihi = new Date(ihbar.created_at).getTime();
     const kabulTarihi = ihbar.kabul_tarihi ? new Date(ihbar.kabul_tarihi).getTime() : null;
     const kapatmaTarihi = ihbar.kapatma_tarihi ? new Date(ihbar.kapatma_tarihi).getTime() : null;
@@ -242,7 +255,6 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
 
     const d = (ihbar.durum || '').toLowerCase();
     
-    // --- 🚨 RENK VE DURUM MANTIĞI ---
     let durumRengi = "text-blue-400";
     let durumIcon = "📡";
     let solCizgi = "border-l-blue-500"; 
@@ -276,8 +288,6 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
         className={`group relative p-4 rounded-[1.5rem] border-l-4 border bg-[#1a1c23]/60 backdrop-blur-xl mb-4 transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-2xl 
           ${solCizgi} ${glowClass} ${isDurduruldu ? 'border-red-500/50 bg-red-900/5 opacity-80' : 'border-gray-800/40'}`}
       >
-        
-        {/* 1. SATIR: ÜST BİLGİ & SAAT */}
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-2">
             <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest 
@@ -290,7 +300,6 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
           </span>
         </div>
 
-        {/* 2. SATIR: ⚙️ TEKNİK NESNE & 🤖 AI MÜHÜRLERİ (GERİ GELDİ) */}
         <div className="flex flex-wrap gap-2 mb-3">
           {ihbar.secilen_nesne_adi && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-orange-600/10 border border-orange-500/30">
@@ -304,7 +313,6 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
           )}
         </div>
 
-        {/* 3. SATIR: İHBAR VEREN VE KONU */}
         <div className="mb-3">
           <div className="text-[12px] font-black uppercase text-gray-100 leading-none mb-1 tracking-tighter italic">
             {ihbar.ihbar_veren_ad_soyad}
@@ -314,7 +322,6 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
           </div>
         </div>
 
-        {/* 4. SATIR: SAHA DURUM ŞERİDİ */}
         <div className={`flex items-center gap-2 py-2 px-3 rounded-xl bg-black/30 border border-white/5 mb-3 ${durumRengi}`}>
           <span className="text-xs">{durumIcon}</span>
           <span className="text-[9px] font-black uppercase italic tracking-wider">
@@ -322,7 +329,6 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
           </span>
         </div>
 
-        {/* 5. SATIR: ALT BİLGİ (PERSONEL & FİİLİ ÇALIŞMA SÜRESİ) */}
         <div className="flex justify-between items-center pt-2 border-t border-gray-800/40 font-black italic">
           <div className="flex items-center gap-2">
             <div className={`w-1.5 h-1.5 rounded-full ${ihbar.atanan_personel ? 'bg-orange-500' : 'bg-blue-500 animate-pulse'}`}></div>
@@ -342,28 +348,27 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
         </div>
       </div>
     );
-}
+  }
 
   const NavButton = ({ label, icon, path, onClick, active = false, count = 0 }: any) => (
-  <div 
-    onClick={onClick || (() => router.push(path))}
-    className={`group flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all border shadow-lg active:scale-95 relative ${active ? 'bg-orange-600 border-orange-400 text-white' : 'bg-[#1a1c23] border-gray-800 text-gray-400 hover:border-orange-500/50 hover:text-white'}`}
-  >
-    <div className="flex items-center gap-3">
-      <span className={`text-lg relative ${active ? 'text-white' : 'text-orange-500 group-hover:scale-110 transition-transform'}`}>
-        {icon}
-        {/* --- BİLDİRİM BALONU --- */}
-        {label === "Bildirimler" && count > 0 && (
-          <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse border border-gray-900">
-            {count > 9 ? '9+' : count}
-          </span>
-        )}
-      </span>
-      <span className="text-[11px] font-black uppercase italic tracking-tighter">{label}</span>
+    <div 
+      onClick={onClick || (() => router.push(path))}
+      className={`group flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all border shadow-lg active:scale-95 relative ${active ? 'bg-orange-600 border-orange-400 text-white' : 'bg-[#1a1c23] border-gray-800 text-gray-400 hover:border-orange-500/50 hover:text-white'}`}
+    >
+      <div className="flex items-center gap-3">
+        <span className={`text-lg relative ${active ? 'text-white' : 'text-orange-500 group-hover:scale-110 transition-transform'}`}>
+          {icon}
+          {label === "Bildirimler" && count > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse border border-gray-900">
+              {count > 9 ? '9+' : count}
+            </span>
+          )}
+        </span>
+        <span className="text-[11px] font-black uppercase italic tracking-tighter">{label}</span>
+      </div>
+      <span className="text-[10px] opacity-30 group-hover:opacity-100 transition-opacity">→</span>
     </div>
-    <span className="text-[10px] opacity-30 group-hover:opacity-100 transition-opacity">→</span>
-  </div>
-)
+  )
 
   return (
     <div className="h-screen w-screen flex text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
@@ -379,11 +384,11 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
         <nav className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
           {canSeeMap && <NavButton label="Saha Haritası" icon="🛰️" path="/dashboard/saha-haritasi" active />}
           <NavButton 
-  label="Bildirimler" 
-  icon="🔔" 
-  onClick={() => setIsBildirimAcik(true)} 
-  count={bildirimSayisi} // Bildirim sayısını buraya ekledik
-/>
+            label="Bildirimler" 
+            icon="🔔" 
+            onClick={() => setIsBildirimAcik(true)} 
+            count={bildirimSayisi} 
+          />
           <div className="h-px bg-gray-800 my-4 opacity-50"></div>
           {canCreateJob && <NavButton label="İhbar Kayıt" icon="📢" path="/dashboard/yeni-ihbar" />}
           {canManageUsers && <NavButton label="Personel Yönetimi" icon="👤" path="/dashboard/personel-yonetimi" />}
@@ -473,7 +478,6 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
         </div>
       </div>
       
-      {/* BİLDİRİM ÇEKMECESİ */}
       <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-[#111318] shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-[100] transform transition-transform duration-500 ease-out p-6 flex flex-col border-l border-orange-500/20 ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex justify-between items-center mb-8">
           <h3 className="text-xl font-black italic uppercase text-orange-500 tracking-tighter">Bildirimler ({bildirimSayisi})</h3>

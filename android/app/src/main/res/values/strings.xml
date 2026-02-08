@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">İhbar Uygulamasi</string>
+    <string name="title_activity_main">İhbar Uygulamasi</string>
+    <string name="package_name">com.ihbar.app</string>
+    <string name="custom_url_scheme">com.ihbar.app</string>
+</resources>
