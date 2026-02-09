@@ -1,9 +1,8 @@
-"use client"; // Capacitor işlemleri için bu dosyanın istemci tarafında çalışması gerekir
+"use client"; // Bu satır Capacitor (Mobil) özellikleri için şarttır
 
-import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { useEffect } from "react"; // 1. Yeni eklendi
-import { PushNotifications } from "@capacitor/push-notifications"; // 2. Yeni eklendi
+import { useEffect } from "react";
+import { PushNotifications } from "@capacitor/push-notifications"; // Eğer hata verirse: npm install @capacitor/push-notifications
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,15 +15,8 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-}
-
-// NOT: 'use client' kullandığımız için Metadata'yı buradan çıkarıp ayrı bir dosyaya 
-// veya alt bileşene koymak gerekebilir ama basitlik için şimdilik tutuyoruz.
+// Metadata'yı bu dosyadan sildik, çünkü 'use client' ile aynı yerde olması hata verebilir.
+// Metadata için 'src/app/metadata.ts' diye bir dosya oluşturabilirsin ama şimdilik ses önemli.
 
 export default function RootLayout({
   children,
@@ -32,23 +24,28 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
 
-  // 3. ADIM: Uygulama ilk açıldığında bildirim kanalını kaydeden efekt
   useEffect(() => {
+    // Sadece tarayıcı/mobil ortamda çalışmasını sağlıyoruz
     const setupNotifications = async () => {
       try {
-        // Android için özel ses kanalını oluşturuyoruz
-        await PushNotifications.createChannel({
-          id: 'saha360_channel', // Edge Function'daki isimle aynı
-          name: 'Saha360 Bildirimleri',
-          description: 'Yeni iş emri bildirimleri için özel ses',
-          sound: 'ihbar_sesi', // res/raw klasöründeki dosya adı (uzantısız)
-          importance: 5, // En yüksek ses seviyesi
-          visibility: 1,
-          vibration: true,
-        });
-        console.log("Bildirim kanalı başarıyla oluşturuldu.");
+        // Önce izin isteyelim (İzin yoksa ses de çıkmaz)
+        const permission = await PushNotifications.requestPermissions();
+        
+        if (permission.receive === 'granted') {
+          // Bildirim kanalını oluşturuyoruz
+          await PushNotifications.createChannel({
+            id: 'saha360_channel', // Edge Function ile aynı olmalı
+            name: 'Saha360 Acil Bildirimler',
+            description: 'İhbar sesli bildirim kanalı',
+            sound: 'ihbar_sesi', // res/raw klasöründeki dosya adı (uzantısız)
+            importance: 5, // En yüksek seviye (Heads-up)
+            visibility: 1,
+            vibration: true,
+          });
+          console.log("🔔 Bildirim kanalı ve ses başarıyla ayarlandı.");
+        }
       } catch (error) {
-        console.error("Bildirim kanalı oluşturulurken hata:", error);
+        console.error("❌ Ses kanalı oluşturma hatası:", error);
       }
     };
 
@@ -57,9 +54,7 @@ export default function RootLayout({
 
   return (
     <html lang="tr">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
       </body>
     </html>
