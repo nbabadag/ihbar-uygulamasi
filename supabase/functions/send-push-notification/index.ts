@@ -12,8 +12,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    // 1. Durum Analizi: Bu bir "Geri Çekme" mi yoksa "Yeni Atama" mı?
-    const mesajAlt = record.mesaj.toLowerCase();
+    // 1. Durum Analizi: İptal mi yoksa Yeni Atama mı?
+    const mesajAlt = record.mesaj?.toLowerCase() || "";
     const isCancelOrWithdraw = mesajAlt.includes("iptal") || mesajAlt.includes("geri") || mesajAlt.includes("alındı");
 
     // 2. Hedefleri Ayrıştır
@@ -25,7 +25,7 @@ serve(async (req) => {
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item)
     )
 
-    // KRİTİK FİLTRE: Eğer ihbar geri çekiliyorsa, ROLLERİ SİL. Sadece ID'si olan kişiye gönder.
+    // Geri çekmede rollere değil, sadece kişiye gider
     const finalRoles = isCancelOrWithdraw ? [] : targetRoles;
 
     // 3. Tokenları Çek
@@ -37,7 +37,6 @@ serve(async (req) => {
     if (conditions.length > 0) {
       query = query.or(conditions.join(','))
     } else {
-      console.log("Geri çekme işlemi için spesifik bir kullanıcı ID'si bulunamadı, roller pas geçildi.");
       return new Response("Hedef yok", { status: 200 })
     }
 
@@ -68,6 +67,12 @@ serve(async (req) => {
     })
     const { access_token } = await tokenRes.json()
 
+    // 5. Bildirim İçeriği ve Başlık Ayarı
+    const bildirimBasligi = isCancelOrWithdraw ? "Saha360 🚨 İş Geri Çekildi" : "Saha360 🚨 Yeni İş Emri";
+    const bildirimIcerigi = isCancelOrWithdraw 
+      ? record.mesaj 
+      : `Konu: ${record.gorev_konusu || 'Yeni Görev'}\n${record.gorev_aciklamasi || ''}`;
+
     const results = await Promise.all(profiles.map(async (p) => {
       await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
         method: 'POST',
@@ -76,15 +81,21 @@ serve(async (req) => {
           message: {
             token: p.fcm_token,
             notification: { 
-              title: isCancelOrWithdraw ? "Görev İptali ⚠️" : "Saha360 🚨", 
-              body: record.mesaj 
+              title: bildirimBasligi, 
+              body: bildirimIcerigi 
             },
             data: {
               ihbar_id: record.ihbar_id?.toString() || "",
               bildirim_tipi: isCancelOrWithdraw ? "iptal" : "yeni",
-              click_action: "FLUTTER_NOTIFICATION_CLICK"
             },
-            android: { priority: "high", notification: { sound: "default", channel_id: "high_importance_channel" } }
+            android: { 
+              priority: "high", 
+              notification: { 
+                sound: "ihbar_sesi", // BURASI ÖNEMLİ: res/raw içindeki dosya adı
+                channel_id: "saha360_channel" // layout.tsx içindeki kanal adı ile aynı olmalı
+              } 
+            },
+            apns: { payload: { aps: { sound: "ihbar_sesi.caf" } } }
           },
         }),
       })
