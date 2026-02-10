@@ -2,8 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
-import { useEffect, useState, useCallback, useRef } from 'react'
-// --- 📱 MOBİL BİLDİRİM IMPORTLARI ---
+import { useEffect, useState, useCallback } from 'react'
 import { PushNotifications } from '@capacitor/push-notifications'
 import { Capacitor } from '@capacitor/core'
 
@@ -21,40 +20,40 @@ export default function DashboardPage() {
   const [bildirimSayisi, setBildirimSayisi] = useState(0)
   const [bildirimler, setBildirimler] = useState<any[]>([])
   const [isBildirimAcik, setIsBildirimAcik] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false) // Mobil menü kontrolü
   
   const [onlineUsers, setOnlineUsers] = useState<any[]>([])
 
-  // --- 📱 MOBİL BİLDİRİM SİSTEMİ (MÜHÜR) ---
+  // --- 📱 MOBİL BİLDİRİM SİSTEMİ (v10 MÜHÜR) ---
   const initPushNotifications = useCallback(async (currentUserId: string) => {
-    if (Capacitor.getPlatform() === 'web') return; // Web'de çalışıyorsa durdur
+    if (Capacitor.getPlatform() === 'web') return;
 
-    // 1. İzinleri Kontrol Et ve İste
+    if (Capacitor.getPlatform() === 'android') {
+        try {
+          await PushNotifications.createChannel({
+            id: 'saha360_v10',
+            name: 'Saha360 ACIL SES',
+            description: 'Acil ihbar sesi ve ekran uyanması',
+            sound: 'ihbar_sesi', 
+            importance: 5,
+            visibility: 1,
+            vibration: true,
+          });
+        } catch (e) { console.error("Kanal hatası:", e); }
+    }
+
     let permStatus = await PushNotifications.checkPermissions();
     if (permStatus.receive === 'prompt') {
       permStatus = await PushNotifications.requestPermissions();
     }
     if (permStatus.receive !== 'granted') return;
 
-    // 2. Cihazı Firebase'e Kaydet
     await PushNotifications.register();
 
-    // 3. Token'ı Al ve Supabase'e Yaz
     PushNotifications.addListener('registration', async (token) => {
-      console.log('Cihaz Token Alındı:', token.value);
-      const { error } = await supabase
-        .from('profiles') // Senin tablo adın 'profiles' olduğu için burayı güncelledim
-        .update({ fcm_token: token.value })
-        .eq('id', currentUserId);
-      
-      if (error) console.error("Token kaydedilirken hata:", error.message);
+      await supabase.from('profiles').update({ fcm_token: token.value }).eq('id', currentUserId);
     });
 
-    // 4. Hata Takibi
-    PushNotifications.addListener('registrationError', (error) => {
-      console.error('Push Kayıt Hatası:', error);
-    });
-
-    // 5. Uygulama Açıkken Bildirim Gelirse
     PushNotifications.addListener('pushNotificationReceived', (notification) => {
       console.log('Mobil Bildirim Geldi:', notification);
     });
@@ -62,25 +61,12 @@ export default function DashboardPage() {
 
   const playNotificationSound = useCallback(() => {
     const audio = new Audio('/notification.mp3');
-    audio.play().catch(() => {
-      console.log("Ses çalmak için kullanıcı etkileşimi bekleniyor.");
-    });
+    audio.play().catch(() => {});
   }, []);
 
   const normalizedRole = userRole?.trim().toUpperCase() || '';
   const isAdmin = normalizedRole.includes('ADMIN');
-  const isMudur = normalizedRole.includes('MÜDÜR') || normalizedRole.includes('MUDUR');
-  const isMuhendis = normalizedRole.includes('MÜH') || normalizedRole.includes('MUH');
-  const isCagri = normalizedRole.includes('ÇAĞRI') || normalizedRole.includes('CAGRI');
-  const isFormen = normalizedRole.includes('FORMEN');
   const isSahaPersoneli = normalizedRole === 'SAHA PERSONELI';
-
-  const canManageUsers = isAdmin || isMudur || isMuhendis;
-  const canCreateJob = canManageUsers || isFormen || isCagri;
-  const canSeeReports = canManageUsers || isFormen;
-  const canSeeTV = canCreateJob;
-  const canManageGroups = canManageUsers || isFormen;
-  const canManageMaterials = canManageUsers || isFormen;
   const canSeeMap = !isSahaPersoneli;
 
   const aiOneriGetir = (konu: string) => {
@@ -97,14 +83,12 @@ export default function DashboardPage() {
   const fetchData = useCallback(async (role: string, id: string) => {
     if (!role || !id) return;
     
-    const { data: userGroupData } = await supabase
-      .from('grup_uyeleri')
-      .select('grup_id, calisma_gruplari(grup_adi)')
-      .eq('profil_id', id);
-    
+    // PERFORMANS: Tamamlananlar için sadece bu ayın başını al
+    const ayinBaslangici = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+    const { data: userGroupData } = await supabase.from('grup_uyeleri').select('grup_id, calisma_gruplari(grup_adi)').eq('profil_id', id);
     const grupIds = userGroupData?.map(g => g.grup_id) || [];
-    const groupNames = userGroupData?.map((g: any) => g.calisma_gruplari?.grup_adi).filter(Boolean) || [];
-    setUserGroups(groupNames); 
+    setUserGroups(userGroupData?.map((g: any) => g.calisma_gruplari?.grup_adi).filter(Boolean) || []);
 
     const { data: komboData } = await supabase.from('ai_kombinasyonlar').select('*');
     if (komboData) setAiKombinasyonlar(komboData);
@@ -112,32 +96,15 @@ export default function DashboardPage() {
     const { data: ihbarData } = await supabase
       .from('ihbarlar')
       .select(`*, profiles:atanan_personel(full_name), calisma_gruplari:atanan_grup_id(grup_adi)`)
+      .or(`durum.not.ilike.%tamamlandi%,created_at.gte.${ayinBaslangici}`) // KRİTİK FİLTRE
       .order('created_at', { ascending: false });
 
     if (ihbarData) {
-      const simdi = new Date();
-      const turkiyeZamani = new Date(simdi.toLocaleString("en-US", {timeZone: "Europe/Istanbul"}));
-      const toplamDakika = turkiyeZamani.getHours() * 60 + turkiyeZamani.getMinutes();
-      const isMesaiSaatleri = toplamDakika >= 481 && toplamDakika <= 1004;
-
       let filtered = ihbarData;
-      const roleUpper = role.trim().toUpperCase();
-
-      if (roleUpper === 'SAHA PERSONELI') {
-        filtered = ihbarData.filter(i => {
-          const d = (i.durum || '').toLowerCase();
-          const isAtanmis = (i.atanan_personel === id) || (grupIds.includes(i.atanan_grup_id));
-          const isVardiyaHavuzaDustu = (!isMesaiSaatleri && i.oncelik_durumu === 'VARDİYA_MODU' && d.includes('beklemede') && i.atanan_personel === null && i.atanan_grup_id === null);
-          
-          if (d.includes('tamamlandi')) {
-            return i.atanan_personel === id;
-          }
-          return isAtanmis || isVardiyaHavuzaDustu;
-        });
+      if (role.trim().toUpperCase() === 'SAHA PERSONELI') {
+        filtered = ihbarData.filter(i => (i.atanan_personel === id) || (grupIds.includes(i.atanan_grup_id)));
       }
-
       setIhbarlar(filtered);
-
       setStats({
         bekleyen: filtered.filter(i => (i.durum || '').toLowerCase().includes('beklemede') && i.atanan_personel === null && i.atanan_grup_id === null).length,
         tamamlanan: filtered.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).length,
@@ -148,30 +115,10 @@ export default function DashboardPage() {
       });
     }
 
-    const rawRole = role.trim().toUpperCase();
-    let roleToSearch = rawRole;
-
-    if (rawRole.includes('ÇAĞRI') || rawRole.includes('CAGRI')) {
-      roleToSearch = 'ÇAĞRI'; 
-    }
-
-    const { data: bData, count, error } = await supabase
-      .from('bildirimler')
-      .select('*', { count: 'exact' })
-      .eq('is_read', false)
-      .contains('hedef_roller', [roleToSearch]) 
-      .order('created_at', { ascending: false })
-      .limit(20);
-
+    const { data: bData, count } = await supabase.from('bildirimler').select('*', { count: 'exact' }).eq('is_read', false).contains('hedef_roller', [role.trim().toUpperCase()]).order('created_at', { ascending: false }).limit(20);
     setBildirimSayisi(count || 0);
     setBildirimler(bData || []);
-
-  }, [supabase]);
-
-  const bildirimOkunduYap = async (bildirimId: string) => {
-    await supabase.from('bildirimler').update({ is_read: true }).eq('id', bildirimId);
-    fetchData(userRole!, userId!);
-  };
+  }, []);
 
   useEffect(() => {
     let channel: any;
@@ -184,282 +131,129 @@ export default function DashboardPage() {
         const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single()
         const currentRole = profile?.role || 'Saha Personeli';
         const currentName = profile?.full_name || 'Kullanıcı';
-        setUserName(currentName)
-        setUserRole(currentRole)
-        fetchData(currentRole, user.id)
-        
-        // --- 📱 MOBİL BİLDİRİMİ TETİKLE ---
+        setUserName(currentName); setUserRole(currentRole);
+        fetchData(currentRole, user.id);
         initPushNotifications(user.id);
 
-        presenceChannel = supabase.channel('online-sync', {
-            config: { presence: { key: 'user' } }
-        })
-
-        presenceChannel
-            .on('presence', { event: 'sync' }, () => {
-                const state = presenceChannel.presenceState();
-                const users = Object.values(state).flat().map((p: any) => ({
-                    id: p.id,
-                    name: p.name,
-                    role: p.role
-                }));
-                const uniqueUsers = Array.from(new Map(users.map((u:any) => [u.id, u])).values());
-                setOnlineUsers(uniqueUsers);
-            })
-            .subscribe(async (status: string) => {
-                if (status === 'SUBSCRIBED') {
-                    await presenceChannel.track({
-                        id: user.id,
-                        name: currentName,
-                        role: currentRole
-                    });
-                }
-            });
+        presenceChannel = supabase.channel('online-sync', { config: { presence: { key: 'user' } } })
+        presenceChannel.on('presence', { event: 'sync' }, () => {
+            const state = presenceChannel.presenceState();
+            const users = Object.values(state).flat().map((p: any) => ({ id: p.id, name: p.name, role: p.role }));
+            setOnlineUsers(Array.from(new Map(users.map((u:any) => [u.id, u])).values()));
+        }).subscribe(async (status: string) => {
+            if (status === 'SUBSCRIBED') await presenceChannel.track({ id: user.id, name: currentName, role: currentRole });
+        });
 
         channel = supabase.channel(`dashboard-realtime-${user.id}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (payload: any) => { 
             if (payload.eventType === 'INSERT') playNotificationSound();
             fetchData(currentRole, user.id); 
           })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'bildirimler' }, () => { 
-             fetchData(currentRole, user.id); 
-          })
           .subscribe()
       } else { router.push('/') }
     }
-    checkUser()
+    checkUser();
     const timer = setInterval(() => { setNow(new Date()); }, 60000)
-
-    return () => { 
-      clearInterval(timer); 
-      if (channel) supabase.removeChannel(channel); 
-      if (presenceChannel) supabase.removeChannel(presenceChannel);
-    }
+    return () => { clearInterval(timer); if (channel) supabase.removeChannel(channel); if (presenceChannel) supabase.removeChannel(presenceChannel); }
   }, [router, fetchData, playNotificationSound, initPushNotifications])
 
   const handleLogout = async () => { await supabase.auth.signOut(); router.push('/'); }
 
+  // --- YARDIMCI BİLEŞENLER ---
   const JobCard = ({ ihbar }: { ihbar: any }) => {
-    const olusturmaTarihi = new Date(ihbar.created_at).getTime();
-    const kabulTarihi = ihbar.kabul_tarihi ? new Date(ihbar.kabul_tarihi).getTime() : null;
-    const kapatmaTarihi = ihbar.kapatma_tarihi ? new Date(ihbar.kapatma_tarihi).getTime() : null;
-
-    let calisilanDakika = 0;
-    if (kapatmaTarihi && kabulTarihi) {
-      calisilanDakika = Math.floor((kapatmaTarihi - kabulTarihi) / 60000);
-    } else if (kabulTarihi) {
-      calisilanDakika = Math.floor((now.getTime() - kabulTarihi) / 60000);
-    } else {
-      calisilanDakika = Math.floor((now.getTime() - olusturmaTarihi) / 60000);
-    }
-
     const d = (ihbar.durum || '').toLowerCase();
+    let solCizgi = d.includes('tamamlandi') ? "border-l-green-600" : ihbar.varis_tarihi ? "border-l-yellow-500 animate-pulse" : ihbar.kabul_tarihi ? "border-l-orange-500" : "border-l-blue-500";
     
-    let durumRengi = "text-blue-400";
-    let durumIcon = "📡";
-    let solCizgi = "border-l-blue-500"; 
-    let glowClass = "group-hover:shadow-[0_0_15px_rgba(59,130,246,0.3)]";
-
-    if (ihbar.kapatma_tarihi || d.includes('tamamlandi')) {
-      durumRengi = "text-green-500";
-      durumIcon = "✔️";
-      solCizgi = "border-l-green-600";
-      glowClass = "group-hover:shadow-[0_0_15px_rgba(34,197,94,0.4)]";
-    } else if (ihbar.varis_tarihi) {
-      durumRengi = "text-yellow-500";
-      durumIcon = "🔨";
-      solCizgi = "border-l-yellow-500 animate-pulse";
-      glowClass = "group-hover:shadow-[0_0_15px_rgba(234,179,8,0.4)]";
-    } else if (ihbar.kabul_tarihi) {
-      durumRengi = "text-orange-500";
-      durumIcon = "🚀";
-      solCizgi = "border-l-orange-500";
-      glowClass = "group-hover:shadow-[0_0_15px_rgba(249,115,22,0.4)]";
-    }
-
-    const isVardiya = ihbar.oncelik_durumu === 'VARDİYA_MODU' && d.includes('beklemede');
-    const isDurduruldu = d.includes('durduruldu');
-    const oneri = aiOneriGetir(`${ihbar.konu} ${ihbar.aciklama || ''}`);
-    const atananIsmi = ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZ';
-
     return (
-      <div 
-        onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} 
-        className={`group relative p-4 rounded-[1.5rem] border-l-4 border bg-[#1a1c23]/60 backdrop-blur-xl mb-4 transition-all duration-300 hover:scale-[1.02] active:scale-95 cursor-pointer shadow-2xl 
-          ${solCizgi} ${glowClass} ${isDurduruldu ? 'border-red-500/50 bg-red-900/5 opacity-80' : 'border-gray-800/40'}`}
-      >
-        <div className="flex justify-between items-center mb-3">
-          <div className="flex items-center gap-2">
-            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest 
-              ${isVardiya ? 'bg-orange-600 text-white animate-bounce' : 'bg-gray-800 text-orange-500'}`}>
-              {isDurduruldu ? '⚠️ DURDURULDU' : isVardiya ? '🚨 VARDİYA' : `#${ihbar.ifs_is_emri_no || 'IFS YOK'}`}
-            </span>
-          </div>
-          <span className="text-[9px] text-gray-500 font-black italic">
-            {new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute:'2-digit'})}
-          </span>
+      <div onClick={() => router.push(`/dashboard/ihbar-detay/${ihbar.id}`)} className={`p-4 rounded-[1.5rem] border-l-4 border bg-[#1a1c23]/60 backdrop-blur-xl mb-4 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer ${solCizgi}`}>
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-gray-800 text-orange-500 uppercase tracking-widest">#{ihbar.ifs_is_emri_no || 'IFS YOK'}</span>
+          <span className="text-[9px] text-gray-500 font-black italic">{new Date(ihbar.created_at).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})}</span>
         </div>
-
-        <div className="flex flex-wrap gap-2 mb-3">
-          {ihbar.secilen_nesne_adi && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-orange-600/10 border border-orange-500/30">
-              <span className="text-[8px] font-black uppercase text-orange-500 italic">⚙️ {ihbar.secilen_nesne_adi}</span>
-            </div>
-          )}
-          {oneri && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-600/10 border border-blue-500/20">
-              <span className="text-[8px] font-black uppercase text-blue-400 italic">🤖 AI: {oneri}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="mb-3">
-          <div className="text-[12px] font-black uppercase text-gray-100 leading-none mb-1 tracking-tighter italic">
-            {ihbar.ihbar_veren_ad_soyad}
-          </div>
-          <div className="text-[10px] font-bold text-gray-500 uppercase italic truncate opacity-80">
-            {ihbar.konu}
-          </div>
-        </div>
-
-        <div className={`flex items-center gap-2 py-2 px-3 rounded-xl bg-black/30 border border-white/5 mb-3 ${durumRengi}`}>
-          <span className="text-xs">{durumIcon}</span>
-          <span className="text-[9px] font-black uppercase italic tracking-wider">
-            {ihbar.kapatma_tarihi || d.includes('tamamlandi') ? "✅ İŞ TAMAMLANDI" : ihbar.varis_tarihi ? "🔧 ARIZA NOKTASINDA" : ihbar.kabul_tarihi ? "🚛 EKİP YOLDA" : "📡 ATAMA BEKLİYOR"}
-          </span>
-        </div>
-
-        <div className="flex justify-between items-center pt-2 border-t border-gray-800/40 font-black italic">
-          <div className="flex items-center gap-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${ihbar.atanan_personel ? 'bg-orange-500' : 'bg-blue-500 animate-pulse'}`}></div>
-            <span className="text-[9px] uppercase text-gray-400 truncate max-w-[120px]">{atananIsmi}</span>
-          </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[7px] text-gray-600 uppercase mb-0.5 tracking-tighter">
-              {ihbar.kabul_tarihi ? 'FİİLİ ÇALIŞMA' : 'BEKLEME SÜRESİ'}
-            </span>
-            <div className="flex items-center gap-1">
-              <span className="text-[8px] opacity-40">⏱️</span>
-              <span className={`text-[10px] ${ihbar.kabul_tarihi ? 'text-orange-500' : 'text-gray-500'}`}>
-                {calisilanDakika} DK
-              </span>
-            </div>
-          </div>
+        <div className="text-[12px] font-black uppercase text-gray-100 mb-1">{ihbar.ihbar_veren_ad_soyad}</div>
+        <div className="text-[10px] font-bold text-gray-500 uppercase italic truncate">{ihbar.konu}</div>
+        <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-800/40">
+           <span className="text-[9px] uppercase text-gray-400 font-black italic">{ihbar.profiles?.full_name || ihbar.calisma_gruplari?.grup_adi || 'HAVUZ'}</span>
+           <span className="text-[10px] text-orange-500 font-black italic">{Math.floor((now.getTime() - new Date(ihbar.created_at).getTime()) / 60000)} DK</span>
         </div>
       </div>
     );
   }
 
   const NavButton = ({ label, icon, path, onClick, active = false, count = 0 }: any) => (
-    <div 
-      onClick={onClick || (() => router.push(path))}
-      className={`group flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all border shadow-lg active:scale-95 relative ${active ? 'bg-orange-600 border-orange-400 text-white' : 'bg-[#1a1c23] border-gray-800 text-gray-400 hover:border-orange-500/50 hover:text-white'}`}
-    >
+    <div onClick={onClick || (() => { router.push(path); setIsSidebarOpen(false); })} className={`flex items-center justify-between p-3.5 rounded-xl cursor-pointer transition-all border ${active ? 'bg-orange-600 border-orange-400 text-white' : 'bg-[#1a1c23] border-gray-800 text-gray-400'}`}>
       <div className="flex items-center gap-3">
-        <span className={`text-lg relative ${active ? 'text-white' : 'text-orange-500 group-hover:scale-110 transition-transform'}`}>
-          {icon}
-          {label === "Bildirimler" && count > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center animate-pulse border border-gray-900">
-              {count > 9 ? '9+' : count}
-            </span>
-          )}
-        </span>
+        <span className="text-lg relative">{icon}{label === "Bildirimler" && count > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center animate-pulse">{count}</span>}</span>
         <span className="text-[11px] font-black uppercase italic tracking-tighter">{label}</span>
       </div>
-      <span className="text-[10px] opacity-30 group-hover:opacity-100 transition-opacity">→</span>
     </div>
   )
 
   return (
     <div className="h-screen w-screen flex text-white font-sans relative overflow-hidden bg-[#0a0b0e]">
-      <div className="fixed inset-0 z-0 opacity-10 pointer-events-none flex items-center justify-center">
-        <img src="/logo.png" className="w-2/3 h-auto grayscale invert" />
+      
+      {/* MOBİL BURGER BUTONU */}
+      <div className="md:hidden fixed top-4 left-4 z-[60]">
+        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="bg-orange-600 p-2.5 rounded-xl shadow-lg border border-orange-400 active:scale-90 transition-all text-xl">
+          {isSidebarOpen ? '✕' : '☰'}
+        </button>
       </div>
 
-      <div className="hidden md:flex w-72 bg-[#111318]/95 backdrop-blur-2xl border-r border-gray-800/50 flex-col fixed h-full z-50 shadow-2xl">
-        <div className="p-6 border-b border-gray-800/30 bg-black/20">
-          <img src="/logo.png" alt="Logo" className="w-full h-auto drop-shadow-[0_0_15px_rgba(249,115,22,0.3)]" />
+      {/* SOL MENÜ (RESPONSIVE) */}
+      <div className={`fixed md:relative inset-y-0 left-0 z-50 w-72 bg-[#111318]/95 backdrop-blur-2xl border-r border-gray-800/50 flex flex-col h-full transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-6 border-b border-gray-800/30 bg-black/20 flex justify-center">
+          <img src="/logo.png" alt="Logo" className="h-12 w-auto" />
         </div>
-
         <nav className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
-          {canSeeMap && <NavButton label="Saha Haritası" icon="🛰️" path="/dashboard/saha-haritasi" active />}
-          <NavButton 
-            label="Bildirimler" 
-            icon="🔔" 
-            onClick={() => setIsBildirimAcik(true)} 
-            count={bildirimSayisi} 
-          />
+          {canSeeMap && <NavButton label="Saha Haritası" icon="🛰️" path="/dashboard/saha-haritasi" />}
+          <NavButton label="Bildirimler" icon="🔔" onClick={() => { setIsBildirimAcik(true); setIsSidebarOpen(false); }} count={bildirimSayisi} />
           <div className="h-px bg-gray-800 my-4 opacity-50"></div>
-          {canCreateJob && <NavButton label="İhbar Kayıt" icon="📢" path="/dashboard/yeni-ihbar" />}
-          {canManageUsers && <NavButton label="Personel Yönetimi" icon="👤" path="/dashboard/personel-yonetimi" />}
-          {canManageMaterials && <NavButton label="Malzeme Yönetimi" icon="📦" path="/dashboard/malzeme-yonetimi" />}
-          {canManageGroups && <NavButton label="Çalışma Gruplari" icon="👥" path="/dashboard/calisma-gruplari" />}
-          {canSeeTV && <NavButton label="İzleme Ekranı" icon="📺" path="/dashboard/izleme-ekrani" />}
-          {canSeeReports && <NavButton label="Raporlama" icon="📊" path="/dashboard/raporlar" />}
-          {canManageUsers && (
-            <>
-              <NavButton label="Teknik Nesne Yönetimi" icon="⚙️" path="/dashboard/teknik-nesne-yonetimi" />
-              <NavButton label="AI Öğrenme Merkezi" icon="🤖" path="/dashboard/ai-yonetim" />
-            </>
-          )}
+          <NavButton label="İhbar Kayıt" icon="📢" path="/dashboard/yeni-ihbar" />
+          <NavButton label="Personel Yönetimi" icon="👤" path="/dashboard/personel-yonetimi" />
+          <NavButton label="Çalışma Gruplari" icon="👥" path="/dashboard/calisma-gruplari" />
+          <NavButton label="İzleme Ekranı" icon="📺" path="/dashboard/izleme-ekrani" />
+          <NavButton label="Raporlama" icon="📊" path="/dashboard/raporlar" />
         </nav>
+        <div className="p-4 bg-black/40 border-t border-gray-800/50">
+          <div className="flex flex-col mb-3 px-2">
+            <span className="text-[11px] font-black uppercase text-orange-500 truncate">{userName}</span>
+            <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">{userRole}</span>
+          </div>
+          <button onClick={handleLogout} className="w-full bg-red-600 p-3 rounded-xl font-black text-[9px] uppercase">Oturumu Kapat</button>
+        </div>
+      </div>
 
-        <div className="px-4 py-2 border-t border-gray-800/50 bg-black/20">
-            <h4 className="text-[8px] font-black text-green-500 uppercase italic mb-2 tracking-[0.2em] flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                AKTİF PERSONEL ({onlineUsers.length})
-            </h4>
-            <div className="max-h-24 overflow-y-auto custom-scrollbar flex flex-col gap-1">
-                {onlineUsers.map((user, idx) => (
-                    <div key={idx} className="flex flex-col bg-white/5 p-1.5 rounded-lg border border-white/5">
-                        <span className="text-[9px] font-black uppercase italic text-gray-300 truncate">{user.name}</span>
-                        <span className="text-[7px] font-bold text-gray-600 uppercase italic truncate">{user.role}</span>
-                    </div>
-                ))}
+      {/* MOBİL ARKA PLAN KARARTMA */}
+      {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"></div>}
+
+      {/* ANA İÇERİK */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 relative z-10 custom-scrollbar flex flex-col">
+        <div className="hidden md:flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-5 rounded-3xl border border-gray-800 shadow-2xl mb-8">
+            <div className="flex items-center gap-4">
+                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                <div className="font-black uppercase italic text-xs tracking-tighter">Saha 360 // Denetim Merkezi</div>
             </div>
         </div>
 
-        <div className="p-4 bg-black/40 border-t border-gray-800/50">
-          <div className="flex flex-col mb-3 px-2">
-            <span className="text-[11px] font-black uppercase italic text-orange-500 truncate">{userName}</span>
-            <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest mb-1">{userRole}</span>
-            {userGroups.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {userGroups.map((grup, idx) => (
-                  <span key={idx} className="bg-blue-600/10 border border-blue-500/30 text-blue-400 text-[7px] px-2 py-0.5 rounded-full font-black uppercase italic mt-1 w-fit">
-                    Atölye: {grup}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <button onClick={handleLogout} className="w-full bg-red-600 hover:bg-red-700 p-3 rounded-xl font-black text-[9px] uppercase shadow-lg transition-all active:scale-95 text-white">Oturumu Kapat</button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto ml-0 md:ml-72 p-4 md:p-8 relative z-10 custom-scrollbar">
-        <div className="flex justify-between items-center bg-[#111318]/80 backdrop-blur-md p-5 rounded-3xl border border-gray-800 shadow-2xl mb-8">
-          <div className="flex items-center gap-4">
-              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-              <div className="font-black uppercase italic text-xs tracking-tighter">Saha 360 // Denetim Merkezi</div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-yellow-500/10 h-[750px] shadow-inner">
-            <h3 className="text-[10px] font-black uppercase italic mb-6 text-yellow-500 flex items-center gap-2 tracking-[0.2em]">
-              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Havuzda Bekleyen İhbarlar ({stats.bekleyen})
+        {/* İHBAR SÜTUNLARI (MOBİLDE SAĞA KAYDIRILABİLİR) */}
+        <div className="flex overflow-x-auto md:grid md:grid-cols-1 xl:grid-cols-3 gap-6 pb-8 snap-x snap-mandatory flex-1 custom-scrollbar">
+          
+          {/* BEKLEYENLER */}
+          <div className="min-w-[85vw] md:min-w-0 snap-center flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-yellow-500/10 h-[650px] md:h-[750px]">
+            <h3 className="text-[10px] font-black uppercase italic mb-6 text-yellow-500 flex items-center gap-2 tracking-[0.2em] sticky top-0 bg-[#111318]/10 py-1">
+              <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span> Havuz ({stats.bekleyen})
             </h3>
-            <div className="overflow-y-auto flex-1 custom-scrollbar pr-2">
+            <div className="overflow-y-auto flex-1 custom-scrollbar">
               {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('beklemede') && i.atanan_personel === null && i.atanan_grup_id === null).map(i => <JobCard key={i.id} ihbar={i} />)}
             </div>
           </div>
 
-          <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-blue-500/10 h-[750px] shadow-inner">
-            <h3 className="text-[10px] font-black uppercase italic mb-6 text-blue-400 flex items-center gap-2 tracking-[0.2em]">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> İşlemde / Durdurulan İhbarlar ({stats.islemde})
+          {/* İŞLEMDE */}
+          <div className="min-w-[85vw] md:min-w-0 snap-center flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-blue-500/10 h-[650px] md:h-[750px]">
+            <h3 className="text-[10px] font-black uppercase italic mb-6 text-blue-400 flex items-center gap-2 tracking-[0.2em] sticky top-0 bg-[#111318]/10 py-1">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> İşlemde ({stats.islemde})
             </h3>
-            <div className="overflow-y-auto flex-1 custom-scrollbar pr-2">
+            <div className="overflow-y-auto flex-1 custom-scrollbar">
               {ihbarlar.filter(i => {
                 const d = (i.durum || '').toLowerCase();
                 return !d.includes('tamamlandi') && (i.atanan_personel !== null || i.atanan_grup_id !== null || d.includes('calisiliyor') || d.includes('durduruldu'));
@@ -467,68 +261,37 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-green-500/10 h-[750px] shadow-inner">
-            <h3 className="text-[10px] font-black uppercase italic mb-6 text-green-400 flex items-center gap-2 tracking-[0.2em]">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Tamanlanan İhbarlar ({stats.tamamlanan})
+          {/* TAMAMLANANLAR (BU AY) */}
+          <div className="min-w-[85vw] md:min-w-0 snap-center flex flex-col bg-[#111318]/40 backdrop-blur-md p-5 rounded-[2.5rem] border border-green-500/10 h-[650px] md:h-[750px]">
+            <h3 className="text-[10px] font-black uppercase italic mb-6 text-green-400 flex items-center gap-2 tracking-[0.2em] sticky top-0 bg-[#111318]/10 py-1">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Bu Ay Biten ({stats.tamamlanan})
             </h3>
-            <div className="overflow-y-auto flex-1 custom-scrollbar pr-2">
+            <div className="overflow-y-auto flex-1 custom-scrollbar">
               {ihbarlar.filter(i => (i.durum || '').toLowerCase().includes('tamamlandi')).map(i => <JobCard key={i.id} ihbar={i} />)}
             </div>
           </div>
+
         </div>
       </div>
-      
-      <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-[#111318] shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-[100] transform transition-transform duration-500 ease-out p-6 flex flex-col border-l border-orange-500/20 ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
+
+      {/* BİLDİRİM DRAWER (MEVCUT) */}
+      <div className={`fixed inset-y-0 right-0 w-80 md:w-96 bg-[#111318] shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-[100] transform transition-transform duration-500 p-6 flex flex-col border-l border-orange-500/20 ${isBildirimAcik ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex justify-between items-center mb-8">
           <h3 className="text-xl font-black italic uppercase text-orange-500 tracking-tighter">Bildirimler ({bildirimSayisi})</h3>
-          <button onClick={() => setIsBildirimAcik(false)} className="bg-gray-800 hover:bg-orange-600 p-2 rounded-full text-[10px] font-black uppercase italic transition-colors">Kapat ×</button>
+          <button onClick={() => setIsBildirimAcik(false)} className="bg-gray-800 p-2 rounded-full text-[10px] font-black uppercase">✕</button>
         </div>
-        <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pr-2">
-          {bildirimler.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center opacity-20 italic uppercase text-xs tracking-widest text-center">
-              Yeni Bildirim Bulunmuyor
+        <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar">
+          {bildirimler.map((b) => (
+            <div key={b.id} onClick={() => { supabase.from('bildirimler').update({ is_read: true }).eq('id', b.id); router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); setIsBildirimAcik(false); }} className="p-4 rounded-2xl border border-gray-800 bg-[#1a1c23] cursor-pointer">
+              <p className="text-[11px] font-black italic uppercase text-gray-200">{b.mesaj}</p>
+              <div className="text-[9px] mt-2 text-orange-500 font-black">#{b.ihbar_id} - {new Date(b.created_at).toLocaleTimeString('tr-TR')}</div>
             </div>
-          ) : (
-            bildirimler.map((b) => (
-              <div 
-                key={b.id} 
-                onClick={async () => { 
-                  await bildirimOkunduYap(b.id); 
-                  router.push(`/dashboard/ihbar-detay/${b.ihbar_id}`); 
-                  setIsBildirimAcik(false); 
-                }} 
-                className={`p-4 rounded-2xl border transition-all cursor-pointer bg-[#1a1c23] hover:border-orange-500/50 
-                  ${b.mesaj?.includes('DURDU') ? 'border-red-900/50 shadow-[0_0_10px_rgba(220,38,38,0.1)]' : 'border-green-900/50 shadow-[0_0_10px_rgba(22,163,74,0.1)]'}`}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className={`text-[8px] font-black px-2 py-0.5 rounded text-white 
-                    ${b.mesaj?.includes('DURDU') ? 'bg-red-600' : 'bg-green-600'}`}>
-                    {b.mesaj?.includes('DURDU') ? 'DURDU' : 'BİTTİ'}
-                  </span>
-                  <span className="text-[8px] font-bold text-gray-600 italic">
-                    {new Date(b.created_at).toLocaleTimeString('tr-TR')}
-                  </span>
-                </div>
-                
-                <p className="text-[11px] font-black italic uppercase leading-tight mb-2 text-gray-200">
-                  {b.mesaj}
-                </p>
-                
-                <div className="flex justify-between items-center text-[9px] font-black text-orange-500">
-                  <span>KAYIT: #{b.ihbar_id}</span>
-                  <span className="text-gray-500 italic">👤 {b.islem_yapan_ad || 'Sistem'}</span>
-                </div>
-              </div>
-            ))
-          )} 
+          ))}
         </div>
       </div>
 
-      {isBildirimAcik && <div onClick={() => setIsBildirimAcik(false)} className="fixed inset-0 bg-black/70 backdrop-blur-md z-[90]"></div>}
-
       <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #f97316; }
       `}</style>
