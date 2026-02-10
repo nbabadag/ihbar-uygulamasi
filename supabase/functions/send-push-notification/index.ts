@@ -12,7 +12,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    // 1. Durum Analizi: İptal mi yoksa Yeni Atama mı?
+    // 1. Durum Analizi
     const mesajAlt = record.mesaj?.toLowerCase() || "";
     const isCancelOrWithdraw = mesajAlt.includes("iptal") || mesajAlt.includes("geri") || mesajAlt.includes("alındı");
 
@@ -25,7 +25,6 @@ serve(async (req) => {
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item)
     )
 
-    // Geri çekmede rollere değil, sadece kişiye gider
     const finalRoles = isCancelOrWithdraw ? [] : targetRoles;
 
     // 3. Tokenları Çek
@@ -67,14 +66,14 @@ serve(async (req) => {
     })
     const { access_token } = await tokenRes.json()
 
-    // 5. Bildirim İçeriği ve Başlık Ayarı
+    // 5. Bildirim İçeriği
     const bildirimBasligi = isCancelOrWithdraw ? "Saha360 🚨 İş Geri Çekildi" : "Saha360 🚨 Yeni İş Emri";
     const bildirimIcerigi = isCancelOrWithdraw 
       ? record.mesaj 
       : `Konu: ${record.gorev_konusu || 'Yeni Görev'}\n${record.gorev_aciklamasi || ''}`;
 
     const results = await Promise.all(profiles.map(async (p) => {
-      await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+      return fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access_token}` },
         body: JSON.stringify({
@@ -91,14 +90,21 @@ serve(async (req) => {
             android: { 
               priority: "high", 
               notification: { 
-                sound: "ihbar_sesi", // BURASI ÖNEMLİ: res/raw içindeki dosya adı
-                channel_id: "saha360_channel" // layout.tsx içindeki kanal adı ile aynı olmalı
+                sound: "ihbar_sesi", 
+                channel_id: "saha360_v3" 
               } 
             },
-            apns: { payload: { aps: { sound: "ihbar_sesi.caf" } } }
-          },
-        }),
-      })
+            apns: { 
+              payload: { 
+                aps: { 
+                  sound: "ihbar_sesi.caf",
+                  contentAvailable: true
+                } 
+              } 
+            }
+          }
+        })
+      });
     }))
 
     return new Response(JSON.stringify({ success: true }))
