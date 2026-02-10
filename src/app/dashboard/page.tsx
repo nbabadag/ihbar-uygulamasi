@@ -467,4 +467,4 @@ const JobCard = ({ ihbar }: { ihbar: any }) => {
       `}</style>
     </div>
   )
-}
+}// fix
