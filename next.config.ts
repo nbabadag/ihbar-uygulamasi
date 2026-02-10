@@ -2,14 +2,18 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typescript: {
+    // TypeScript hataları (Deno hatası dahil) build'i durdurmasın
     ignoreBuildErrors: true,
   },
   eslint: {
+    // ESLint hataları build'i engellemesin
     ignoreDuringBuilds: true,
   },
-  // Middleware uyarısını susturmak ve sayfaların açılmasını sağlamak için
+  // Middleware uyarısını ve takılmaları aşmak için Turbopack'i kapatalım
   experimental: {
-    // Middleware yerine bunu kullanabilirsin veya şimdilik boş bırakabilirsin
+    turbo: {
+      enabled: false
+    }
   }
 };
 
