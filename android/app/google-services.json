@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "185611082891",
+    "project_id": "saha360-a46ec",
+    "storage_bucket": "saha360-a46ec.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:185611082891:android:8146f7b8cd1c85db97c88e",
+        "android_client_info": {
+          "package_name": "com.ihbar.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzaD47s9PvAktFWQm5LBybubA-VQfOjiM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:185611082891:android:b3ce9ba5cff78fe197c88e",
+        "android_client_info": {
+          "package_name": "com.saha360.takip"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzaD47s9PvAktFWQm5LBybubA-VQfOjiM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
