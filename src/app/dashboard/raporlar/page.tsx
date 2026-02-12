@@ -1,3 +1,4 @@
+// Guncelleme: 12 Subat - Rapor Sistemi
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
