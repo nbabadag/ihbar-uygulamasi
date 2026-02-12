@@ -69,7 +69,7 @@ export default function Raporlar() {
     const counts: any = {};
     finished.forEach(i => { counts[i.secilen_nesne_adi] = (counts[i.secilen_nesne_adi] || 0) + 1 });
     const bottleneck = Object.entries(counts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || '-';
-    const efficiency = total > 0 ? Math.round((finished.filter(i => (curr:any) => (curr.calisma_suresi_dakika || 0) < 1440).length / total) * 100) : 0;
+    const efficiency = total > 0 ? Math.round((finished.filter((curr: any) => (curr.calisma_suresi_dakika || 0) < 1440).length / total) * 100) : 0;
     return { total, avgTime, bottleneck, efficiency };
   }, [filteredData]);
 
