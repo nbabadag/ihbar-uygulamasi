@@ -1,4 +1,4 @@
-// Guncelleme: 12 Subat - Rapor Sistemi
+// Guncelleme: 12 Subat - Rapor Sistemi (Dinamik Analiz & Temiz Etiket Modu)
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -68,7 +68,6 @@ export default function Raporlar() {
     const counts: any = {}
     finished.forEach(i => { counts[i.secilen_nesne_adi] = (counts[i.secilen_nesne_adi] || 0) + 1 })
     const bottleneck = Object.entries(counts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] || '-'
-    // Düzeltilen Satır Burası:
     const efficiency = total > 0 ? Math.round((finished.filter((curr: any) => (curr.calisma_suresi_dakika || 0) < 1440).length / total) * 100) : 0
     return { total, avgTime, bottleneck, efficiency }
   }, [filteredData])
@@ -86,17 +85,27 @@ export default function Raporlar() {
   const scatterData = useMemo(() => {
     return Object.values(equipmentStats).map((e: any) => ({
       name: e.name,
-      x: e.count,
-      y: Math.round(e.totalTime / e.count),
-      z: e.count
-    })).sort((a:any, b:any) => b.y - a.y);
+      arıza: e.count,
+      süre: Math.round(e.totalTime / e.count),
+      etki: e.count
+    })).sort((a:any, b:any) => b.süre - a.süre);
   }, [equipmentStats])
 
   const excelIndir = () => {
     const wb = XLSX.utils.book_new()
+    const enCokAriza = stats.bottleneck;
+    const kritikDarboğazlar = scatterData
+      .filter((e: any) => e.süre > stats.avgTime * 1.3)
+      .map((e: any) => e.name)
+      .slice(0, 3)
+      .join(", ");
+
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filteredData), "1-TUM_KAYITLAR")
+    
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(Object.keys(equipmentStats).map(name => ({
-      Varlık: name, Risk: Math.min(equipmentStats[name].count * 12, 98), Tahmin: Math.max(30 - (equipmentStats[name].count * 2), 3)
+      "Ekipman Adı": name, 
+      "Risk Skoru (%)": Math.min(equipmentStats[name].count * 12, 98), 
+      "Kalan Ömür Tahmini (Gün)": Math.max(30 - (equipmentStats[name].count * 2), 3)
     }))), "2-AI_TAHMINLERI")
     
     const atolye = [
@@ -105,17 +114,30 @@ export default function Raporlar() {
       { Atolye: 'BİNA', Adet: filteredData.filter(d => String(d.is_istasyonu).includes('204')).length }
     ]
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(atolye), "3-ATOLYE_YUKU")
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(scatterData), "4-DARBOGAZ_ANALIZI")
+    
+    const darbogazTablosu = scatterData.map((e: any) => ({
+      "Ekipman Adı": e.name,
+      "Arıza Sayısı": e.arıza,
+      "Ort. Onarım Süresi (Dk)": e.süre,
+      "İş Yükü Etkisi": e.etki
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(darbogazTablosu), "4-DARBOGAZ_ANALIZI")
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(scatterData.slice(0, 10)), "5-KRITIK_VARLIKLAR")
     
-    const ozet = [["METRİK", "DEĞER"], ["Toplam İhbar", stats.total], ["MTTR", stats.avgTime], ["Verimlilik", stats.efficiency]]
+    const ozet = [["METRİK", "DEĞER"], ["Toplam İhbar", stats.total], ["MTTR (Ort. Onarım)", stats.avgTime + " dk"], ["Saha Verimliliği", "%" + stats.efficiency]]
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ozet), "6-OZET_KPI")
 
     const yorumlar = [
-      ["SAHA ANALİTİK - OPERASYONEL YORUMLAR"],
-      [`En çok iş emri açılan ekipman ${stats.bottleneck} olarak gözlemlenmiştir. [cite: 1, 3]`],
-      ["Yüksek onarım süreleri bakım süreçlerinde darboğaz yaratmaktadır. [cite: 34, 48]"],
-      ["Özellikle 002 Numaralı Vinç ve 17 nolu Platform gibi ekipmanlar operasyonel risk taşımaktadır. [cite: 35, 74]"]
+      ["SAHA 360 - OTOMATİK OPERASYONEL ANALİZ RAPORU"],
+      ["--------------------------------------------------"],
+      ["1. EKİPMAN SAĞLIĞI VE ARIZA YOĞUNLUĞU:"],
+      [`Seçilen kriterlere göre en yüksek arıza frekansına sahip ekipman: ${enCokAriza}.`],
+      [""],
+      ["2. DARBOĞAZ ANALİZİ (MTTR):"],
+      [`Saha genelinde ortalama onarım süresi ${stats.avgTime} dakikadır.`],
+      [kritikDarboğazlar ? `${kritikDarboğazlar} ekipmanları ortalamanın üzerinde onarım süresi gerektirmektedir.` : "Kritik bir süre darboğazı saptanmamıştır."],
+      [""],
+      [`Rapor Tarihi: ${new Date().toLocaleString('tr-TR')}`]
     ]
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(yorumlar), "7-AKILLI_YORUMLAR")
 
@@ -173,21 +195,49 @@ export default function Raporlar() {
             </div>
 
             <div className="w-full bg-[#111318] p-10 rounded-[3rem] border border-blue-500/10 min-h-[600px]">
-              <h3 className="text-xs mb-10 border-l-4 border-blue-500 pl-4 tracking-widest uppercase">Darboğaz Analizi (Arıza Sıklığı vs Ortalama Süre) [cite: 36, 73]</h3>
-              <ResponsiveContainer width="100%" height={500}>
-                <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
-                  <CartesianGrid stroke="#222" vertical={false} />
-                  <XAxis type="number" dataKey="x" name="ARIZA" stroke="#666" fontSize={10} />
-                  <YAxis type="number" dataKey="y" name="SÜRE" stroke="#666" fontSize={10} />
-                  <ZAxis type="number" dataKey="z" range={[200, 2000]} />
-                  <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                  <Scatter data={scatterData}>
-                    {scatterData.map((entry, index) => (
-                      <Cell key={index} fill={entry.y > stats.avgTime * 1.5 ? '#ef4444' : '#3b82f6'} />
-                    ))}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
+              <h3 className="text-xs mb-10 border-l-4 border-blue-500 pl-4 tracking-widest uppercase">Darboğaz Analizi (Arıza Sıklığı vs Ortalama Süre)</h3>
+             <ResponsiveContainer width="100%" height={500}>
+  <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+    <CartesianGrid stroke="#222" vertical={false} />
+    
+    {/* Eksen yazıları (tick) ve etiketleri (label) için fill="#fff" ekledik */}
+    <XAxis 
+      type="number" 
+      dataKey="arıza" 
+      name="ARIZA SAYISI" 
+      stroke="#888" 
+      fontSize={12} 
+      tick={{ fill: '#fff' }} 
+      label={{ value: 'ARIZA SAYISI', position: 'insideBottomRight', offset: -10, fill: '#ffa500', fontSize: 10 }}
+    />
+    <YAxis 
+      type="number" 
+      dataKey="süre" 
+      name="ORT. ONARIM (DK)" 
+      stroke="#888" 
+      fontSize={12} 
+      tick={{ fill: '#fff' }}
+      label={{ value: 'ORT. ONARIM (DK)', angle: -90, position: 'insideLeft', fill: '#ffa500', fontSize: 10 }}
+    />
+    
+    <ZAxis type="number" dataKey="etki" name="İŞ YÜKÜ ETKİSİ" range={[200, 2000]} />
+    
+    <Tooltip 
+      cursor={{ strokeDasharray: '3 3' }} 
+      contentStyle={{ backgroundColor: '#111318', border: '2px solid #ffa500', borderRadius: '15px', color: '#fff' }}
+      itemStyle={{ fontSize: '12px', fontWeight: 'bold', color: '#fff' }}
+    />
+    
+    <Scatter data={scatterData}>
+      {scatterData.map((entry, index) => (
+        <Cell 
+          key={index} 
+          fill={entry.süre > stats.avgTime * 1.5 ? '#ef4444' : '#3b82f6'} 
+        />
+      ))}
+    </Scatter>
+  </ScatterChart>
+</ResponsiveContainer>
             </div>
           </div>
         ) : (
