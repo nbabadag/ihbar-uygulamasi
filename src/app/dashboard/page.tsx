@@ -2,8 +2,6 @@
 
 /**
  * SAHA 360 - OPERASYONEL KONTROL MERKEZİ
- * NUSRET KAPTAN ÖZEL SÜRÜM - KESİNTİSİZ TAM SÜRÜM (600+ SATIR)
- * CANLI AKIŞ SİLİNDİ - KONUM TAKİBİ VE REALTIME ODAKLI
  */
 
 import { useRouter } from 'next/navigation'
@@ -175,86 +173,97 @@ export default function DashboardPage() {
     setBildirimler(bData || []);
   }, []);
 
-  // --- 🛰️ REALTIME VE KONUM TAKİBİ ETKİSİ ---
-  useEffect(() => {
-    audioRef.current = new Audio('/notification.mp3');
-    const unlock = () => { 
-      audioRef.current?.play().then(() => audioRef.current?.pause()).catch(()=>{}); 
-      window.removeEventListener('click', unlock); 
-    };
-    window.addEventListener('click', unlock);
+// --- 🛰️ REALTIME VE KONUM TAKİBİ ETKİSİ (TAMİR EDİLMİŞ VERSİYON) ---
+useEffect(() => {
+  audioRef.current = new Audio('/notification.mp3');
+  
+  const unlock = () => { 
+    audioRef.current?.play().then(() => audioRef.current?.pause()).catch(()=>{}); 
+    window.removeEventListener('click', unlock); 
+  };
+  window.addEventListener('click', unlock);
 
-    let channel: any; 
-    let presenceChannel: any;
+  let ihbarChannel: any; 
+  let presenceChannel: any;
 
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setUserId(user.id);
-        const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single();
-        const cRole = profile?.role || 'Saha Personeli';
-        const cName = profile?.full_name || 'Kullanıcı';
-        setUserName(cName); 
-        setUserRole(cRole); 
-        fetchData(cRole, user.id);
-        
-        // --- 📍 PRESENCE KANALI ---
-        presenceChannel = supabase.channel('online-sync', { config: { presence: { key: 'user' } } });
-        
-        presenceChannel.on('presence', { event: 'sync' }, () => {
-          const state = presenceChannel.presenceState();
-          const users = Object.values(state).flat().map((p: any) => ({ 
-            id: p.id, name: p.name, role: p.role, lat: p.lat, lng: p.lng 
-          }));
-          // Tarayıcı Map objesi ikonla çakışmaz (LucideMap alias'ı sayesinde)
-          setOnlineUsers(Array.from(new Map(users.map((u:any) => [u.id, u])).values()));
-        });
+  const checkUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      setUserId(user.id);
+      const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).single();
+      const cRole = profile?.role || 'Saha Personeli';
+      const cName = profile?.full_name || 'Kullanıcı';
+      setUserName(cName); 
+      setUserRole(cRole); 
+      fetchData(cRole, user.id);
+      
+      // 1. KANAL: CANLI KONUM VE PRESENCE (Mevcut hali korundu)
+      presenceChannel = supabase.channel('online-sync', { config: { presence: { key: 'user' } } });
+      
+      presenceChannel.on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        const users = Object.values(state).flat().map((p: any) => ({ 
+          id: p.id, name: p.name, role: p.role, lat: p.lat, lng: p.lng 
+        }));
+        setOnlineUsers(Array.from(new Map(users.map((u:any) => [u.id, u])).values()));
+      });
 
-        presenceChannel.subscribe(async (status: string) => { 
-          if (status === 'SUBSCRIBED' && "geolocation" in navigator) {
-              navigator.geolocation.watchPosition((pos) => {
-                  presenceChannel.track({ 
-                      id: user.id, name: cName, role: cRole, 
-                      lat: pos.coords.latitude, lng: pos.coords.longitude 
-                  });
-              }, null, { enableHighAccuracy: true });
+      presenceChannel.subscribe(async (status: string) => { 
+        if (status === 'SUBSCRIBED' && "geolocation" in navigator) {
+            navigator.geolocation.watchPosition((pos) => {
+                presenceChannel.track({ 
+                    id: user.id, name: cName, role: cRole, 
+                    lat: pos.coords.latitude, lng: pos.coords.longitude 
+                });
+            }, null, { enableHighAccuracy: true });
+        }
+      });
+      
+      // 2. KANAL: ÖZEL İHBAR RADARI (BURASI DÜZELTİLDİ)
+      // Kanal ismini benzersiz yaparak çakışmayı önledik
+      ihbarChannel = supabase.channel(`ihbar-radari-${user.id}`)
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'ihbarlar' 
+        }, (p: any) => { 
+          console.log("Müjde kaptan, yeni ihbar düştü:", p.new);
+          playNotificationSound(`Saha ekipleri dikkat! ${p.new.konu} konulu yeni bir ihbar kaydı oluşturuldu.`); 
+          fetchData(cRole, user.id); 
+        })
+        .on('postgres_changes', { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'ihbarlar' 
+        }, (p: any) => {
+          const eskiDurum = (p.old?.durum || '').toLowerCase();
+          const yeniDurum = (p.new?.durum || '').toLowerCase();
+          
+          if (!eskiDurum.includes('tamamlandi') && yeniDurum.includes('tamamlandi')) {
+            playNotificationSound("Tamamlanan bir iş kaydı arşive alındı.");
           }
+          fetchData(cRole, user.id);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'bildirimler' }, () => fetchData(cRole, user.id))
+        .subscribe((status) => {
+          console.log("İhbar radar durumu:", status);
         });
-        
-        // --- 📡 VERİTABANI REALTIME ---
-        channel = supabase.channel(`dashboard-realtime-${user.id}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'ihbarlar' }, (p: any) => { 
-            const durum = (p.new?.durum || '').toLowerCase();
-            if (p.eventType === 'INSERT') { 
-              playNotificationSound("Yeni bir saha ihbarı oluşturuldu."); 
-            } else if (durum.includes('tamamlandi')) { 
-              playNotificationSound("Bir arıza kaydı başarıyla kapatıldı."); 
-            }
-            fetchData(cRole, user.id); 
-          })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'bildirimler' }, () => fetchData(cRole, user.id))
-          .subscribe();
-      } else { 
-        router.push('/') 
-      }
+    } else { 
+      router.push('/') 
     }
-    checkUser();
-    
-    const timer = setInterval(() => setNow(new Date()), 60000);
-    return () => { 
-      clearInterval(timer); 
-      if (channel) supabase.removeChannel(channel); 
-      if (presenceChannel) supabase.removeChannel(presenceChannel); 
-    };
-  }, [router, fetchData, playNotificationSound]);
-
-  const handleLogout = async () => { 
-    if (window.confirm("Oturumu kapatmak istediğinize emin misiniz?")) { 
-      await supabase.auth.signOut(); 
-      router.push('/'); 
-    } 
   }
-
+  
+  checkUser();
+  
+  const timer = setInterval(() => setNow(new Date()), 60000);
+  
+  return () => { 
+    clearInterval(timer); 
+    // Temizliği kanallara özel yapıyoruz
+    if (ihbarChannel) supabase.removeChannel(ihbarChannel); 
+    if (presenceChannel) supabase.removeChannel(presenceChannel); 
+  };
+}, [router, fetchData, playNotificationSound]);
   // --- 🃏 İŞ KARTI BİLEŞENİ ---
   const JobCard = ({ ihbar }: { ihbar: any }) => {
     const olusturmaTarihi = new Date(ihbar.created_at).getTime();
