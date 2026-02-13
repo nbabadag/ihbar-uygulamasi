@@ -5,32 +5,31 @@ import android.webkit.GeolocationPermissions;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
+// Eklentileri manuel kaydetmek gerekirse buraya ekleyeceğiz
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Capacitor 3+ sürümlerinde eklentiler otomatik yüklenir.
     }
 
     @Override
     public void onStart() {
         super.onStart();
         
-        // 1. Önce WebView nesnesine ulaşıyoruz
         WebView webView = this.bridge.getWebView();
         
-        // 2. Seslerin otomatik çalması için kilitleri açıyoruz
-        // Personel ekrana dokunmasa bile bildirim sesi çalabilecek
+        // 🔊 Ses Kilidi: Personel dokunmasa da ses çalar
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
         
-        // 3. Konum (GPS) motorunu aktif ediyoruz
+        // 📍 Konum Kilidi: GPS motoru aktif
         webView.getSettings().setGeolocationEnabled(true);
         
-        // 4. İzin taleplerini yakalayıp sisteme iletiyoruz
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
-                // Konum izni penceresini zorla ekrana getirir
+                // Konum izni penceresini tetikler
                 callback.invoke(origin, true, false);
             }
         });

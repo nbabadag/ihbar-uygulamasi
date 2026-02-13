@@ -2,6 +2,7 @@
 
 /**
  * SAHA 360 - OPERASYONEL KONTROL MERKEZİ
+ * NUSRET KAPTAN ÖZEL SÜRÜM - BİLDİRİM KAYIT MOTORLU
  */
 
 import { useRouter } from 'next/navigation'
@@ -12,6 +13,9 @@ import {
   useCallback, 
   useRef 
 } from 'react'
+
+// --- 🔔 BİLDİRİM KÜTÜPHANESİ ---
+import { PushNotifications } from '@capacitor/push-notifications'
 
 // --- 🛠️ ICON ÇAKIŞMA ÖNLEME (ALIASING) ---
 import Bell from 'lucide-react/dist/esm/icons/bell'
@@ -181,7 +185,39 @@ const handleLogout = async () => {
   } 
 };
 
-// --- 🛰️ REALTIME VE KONUM TAKİBİ ETKİSİ (TAMİR EDİLMİŞ VERSİYON) ---
+// --- 🔔 PUSH BİLDİRİM KAYIT MOTORU ---
+const setupPushNotifications = async (currentUserId: string) => {
+  try {
+    if (typeof window === 'undefined') return;
+
+    // 1. İzin İste
+    let permStatus = await PushNotifications.checkPermissions();
+    if (permStatus.receive === 'prompt') {
+      permStatus = await PushNotifications.requestPermissions();
+    }
+
+    if (permStatus.receive !== 'granted') return;
+
+    // 2. Kayıt Ol (Token Al)
+    await PushNotifications.register();
+
+    // 3. Token'ı Supabase'e Yaz
+    PushNotifications.addListener('registration', async (token) => {
+      console.log('Push Token Alındı:', token.value);
+      await supabase.from('profiles').update({ push_token: token.value }).eq('id', currentUserId);
+    });
+
+    // 4. Uygulama Açıkken Bildirim Geldiğinde Ses Çal
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      playNotificationSound(notification.body || "Yeni bir ihbar kaydı var.");
+    });
+
+  } catch (error) {
+    console.error('Push hatası:', error);
+  }
+};
+
+// --- 🛰️ REALTIME VE KONUM TAKİBİ ETKİSİ ---
 useEffect(() => {
   audioRef.current = new Audio('/notification.mp3');
   
@@ -204,8 +240,9 @@ useEffect(() => {
       setUserName(cName); 
       setUserRole(cRole); 
       fetchData(cRole, user.id);
+      setupPushNotifications(user.id); // Telsiz kaydını ateşle
       
-      // 1. KANAL: CANLI KONUM VE PRESENCE (Mevcut hali korundu)
+      // 1. KANAL: CANLI KONUM VE PRESENCE
       presenceChannel = supabase.channel('online-sync', { config: { presence: { key: 'user' } } });
       
       presenceChannel.on('presence', { event: 'sync' }, () => {
@@ -227,15 +264,13 @@ useEffect(() => {
         }
       });
       
-      // 2. KANAL: ÖZEL İHBAR RADARI (BURASI DÜZELTİLDİ)
-      // Kanal ismini benzersiz yaparak çakışmayı önledik
+      // 2. KANAL: ÖZEL İHBAR RADARI
       ihbarChannel = supabase.channel(`ihbar-radari-${user.id}`)
         .on('postgres_changes', { 
           event: 'INSERT', 
           schema: 'public', 
           table: 'ihbarlar' 
         }, (p: any) => { 
-          console.log("Müjde kaptan, yeni ihbar düştü:", p.new);
           playNotificationSound(`Saha ekipleri dikkat! ${p.new.konu} konulu yeni bir ihbar kaydı oluşturuldu.`); 
           fetchData(cRole, user.id); 
         })
@@ -246,16 +281,13 @@ useEffect(() => {
         }, (p: any) => {
           const eskiDurum = (p.old?.durum || '').toLowerCase();
           const yeniDurum = (p.new?.durum || '').toLowerCase();
-          
           if (!eskiDurum.includes('tamamlandi') && yeniDurum.includes('tamamlandi')) {
             playNotificationSound("Tamamlanan bir iş kaydı arşive alındı.");
           }
           fetchData(cRole, user.id);
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'bildirimler' }, () => fetchData(cRole, user.id))
-        .subscribe((status) => {
-          console.log("İhbar radar durumu:", status);
-        });
+        .subscribe();
     } else { 
       router.push('/') 
     }
@@ -267,11 +299,11 @@ useEffect(() => {
   
   return () => { 
     clearInterval(timer); 
-    // Temizliği kanallara özel yapıyoruz
     if (ihbarChannel) supabase.removeChannel(ihbarChannel); 
     if (presenceChannel) supabase.removeChannel(presenceChannel); 
   };
 }, [router, fetchData, playNotificationSound]);
+
   // --- 🃏 İŞ KARTI BİLEŞENİ ---
   const JobCard = ({ ihbar }: { ihbar: any }) => {
     const olusturmaTarihi = new Date(ihbar.created_at).getTime();
@@ -684,3 +716,4 @@ useEffect(() => {
     </div>
   )
 }
+
