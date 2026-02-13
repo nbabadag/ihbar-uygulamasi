@@ -185,37 +185,52 @@ const handleLogout = async () => {
   } 
 };
 
-// --- 🔔 PUSH BİLDİRİM KAYIT MOTORU ---
-const setupPushNotifications = async (currentUserId: string) => {
-  try {
-    if (typeof window === 'undefined') return;
+// --- 🔔 PUSH BİLDİRİM KAYIT MOTORU (GELİŞTİRİLMİŞ) ---
+  const setupPushNotifications = async (currentUserId: string) => {
+    try {
+      if (typeof window === 'undefined') return;
 
-    // 1. İzin İste
-    let permStatus = await PushNotifications.checkPermissions();
-    if (permStatus.receive === 'prompt') {
-      permStatus = await PushNotifications.requestPermissions();
+      const { PushNotifications } = await import('@capacitor/push-notifications');
+
+      // 1. İzin Durumunu Kontrol Et ve İste
+      let permStatus = await PushNotifications.checkPermissions();
+      if (permStatus.receive === 'prompt') {
+        permStatus = await PushNotifications.requestPermissions();
+      }
+
+      if (permStatus.receive !== 'granted') return;
+
+      // 2. 🛡️ ANDROID KANALI OLUŞTUR (BİLDİRİMİN GÖRÜNMESİ İÇİN ŞART)
+      await PushNotifications.createChannel({
+        id: 'fcm_default_channel',
+        name: 'Saha 360 Bildirimleri',
+        description: 'İhbar ve görev bildirimleri',
+        importance: 5, // En yüksek (sesli ve ekranda beliren)
+        visibility: 1,
+        sound: 'notification.mp3'
+      });
+
+      // 3. Google (FCM) Kaydını Başlat
+      await PushNotifications.register();
+
+      // 4. Token'ı Supabase'e Yaz
+      PushNotifications.addListener('registration', async (token) => {
+        console.log('FCM Token Alındı:', token.value);
+        await supabase
+          .from('profiles')
+          .update({ push_token: token.value })
+          .eq('id', currentUserId);
+      });
+
+      // 5. Uygulama Açıkken Bildirim Gelirse
+      PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        playNotificationSound(notification.body || "Yeni bir bildiriminiz var.");
+      });
+
+    } catch (error) {
+      console.warn('Push Notification kurulumunda hata veya mobil olmayan cihaz.');
     }
-
-    if (permStatus.receive !== 'granted') return;
-
-    // 2. Kayıt Ol (Token Al)
-    await PushNotifications.register();
-
-    // 3. Token'ı Supabase'e Yaz
-    PushNotifications.addListener('registration', async (token) => {
-      console.log('Push Token Alındı:', token.value);
-      await supabase.from('profiles').update({ push_token: token.value }).eq('id', currentUserId);
-    });
-
-    // 4. Uygulama Açıkken Bildirim Geldiğinde Ses Çal
-    PushNotifications.addListener('pushNotificationReceived', (notification) => {
-      playNotificationSound(notification.body || "Yeni bir ihbar kaydı var.");
-    });
-
-  } catch (error) {
-    console.error('Push hatası:', error);
-  }
-};
+  };
 
 // --- 🛰️ REALTIME VE KONUM TAKİBİ ETKİSİ ---
 useEffect(() => {
