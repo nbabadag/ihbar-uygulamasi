@@ -173,6 +173,14 @@ export default function DashboardPage() {
     setBildirimler(bData || []);
   }, []);
 
+// --- 🚪 OTURUM KAPATMA FONKSİYONU ---
+const handleLogout = async () => { 
+  if (window.confirm("Oturumu kapatmak istediğinize emin misiniz?")) { 
+    await supabase.auth.signOut(); 
+    router.push('/'); 
+  } 
+};
+
 // --- 🛰️ REALTIME VE KONUM TAKİBİ ETKİSİ (TAMİR EDİLMİŞ VERSİYON) ---
 useEffect(() => {
   audioRef.current = new Audio('/notification.mp3');
