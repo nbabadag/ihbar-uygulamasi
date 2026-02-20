@@ -1,186 +1,128 @@
 'use client'
-
-/**
- * SAHA 360 - OPERASYONEL KONUM MERKEZİ
- * CANLI TAKİP EKRANI - NUSRET KAPTAN ÖZEL SÜRÜM
- * MAP.SETVIEW HATASI GİDERİLDİ - TAM SÜRÜM
- */
-
-import { useRouter } from 'next/navigation'
-import { supabase } from '../../../lib/supabase'
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-
-// CSS importu en tepede kalmalı
 import 'leaflet/dist/leaflet.css'
 
-// Harita bileşenlerini dinamik yüklüyoruz (SSR kapalı)
+// Harita Bileşenleri
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLayer), { ssr: false });
 const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false });
 const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), { ssr: false });
 
-import { 
-  ChevronLeft, 
-  Users, 
-  Radio, 
-  Activity,
-  Target,
-  Navigation as NavIcon
-} from 'lucide-react'
-
-// --- 🔄 HARİTA MERKEZİNİ GÜNCELLEME BİLEŞENİ (DÜZELTİLDİ) ---
 function MapUpdater({ center }: { center: [number, number] }) {
-  // react-leaflet'ten useMap'i burada dinamik olmadan çekiyoruz
-  const { useMap: useLeafletMap } = require('react-leaflet');
-  const map = useLeafletMap();
-  
-  useEffect(() => {
-    if (map && center) {
-      map.setView(center, map.getZoom(), { animate: true });
-    }
-  }, [center, map]);
+  const { useMap } = require('react-leaflet');
+  const map = useMap();
+  useEffect(() => { if (map && center) map.setView(center, map.getZoom(), { animate: true }); }, [center, map]);
   return null;
 }
 
-export default function CanliTakipPage() {
+export default function HibritSahaPaneli() {
   const router = useRouter()
+  const [isler, setIsler] = useState<any[]>([])
   const [onlineUsers, setOnlineUsers] = useState<any[]>([])
-  const [selectedUser, setSelectedUser] = useState<any>(null)
-  const [mapCenter, setMapCenter] = useState<[number, number]>([39.9334, 32.8597])
+  const [mod, setMod] = useState<'aktif' | 'tamamlandi' | 'canli'>('aktif')
+  const [mapCenter, setMapCenter] = useState<[number, number]>([40.73, 29.50])
   const [L, setL] = useState<any>(null)
-  const presenceChannelRef = useRef<any>(null)
+  const channelRef = useRef<any>(null)
 
+  // Leaflet yüklendiğinde ikonu hazırla
+  useEffect(() => { import('leaflet').then(m => setL(m)); }, []);
+
+  // 📡 CANLI KONUM TAKİBİ (Presence)
   useEffect(() => {
-    import('leaflet').then((leaflet) => {
-      setL(leaflet);
-    });
-  }, []);
-
-  useEffect(() => {
-    const initPresence = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/'); return; }
-
-      const channel = supabase.channel('online-sync', {
-        config: { presence: { key: 'user' } }
-      })
-
-      channel.on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState()
-        const users = Object.values(state).flat().map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          role: p.role,
-          lat: p.lat,
-          lng: p.lng,
-          lastSeen: new Date().toLocaleTimeString('tr-TR')
-        }))
-        setOnlineUsers(users.filter(u => u.lat && u.lng))
-      })
-
-      channel.subscribe()
-      presenceChannelRef.current = channel
+    if (mod !== 'canli') {
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      return;
     }
+    const channel = supabase.channel('online-sync', { config: { presence: { key: 'user' } } });
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      const users = Object.values(state).flat().map((p: any) => ({ ...p, lastSeen: new Date().toLocaleTimeString('tr-TR') }));
+      setOnlineUsers(users.filter((u: any) => u.lat && u.lng));
+    }).subscribe();
+    channelRef.current = channel;
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+  }, [mod]);
 
-    initPresence()
-    return () => { if (presenceChannelRef.current) supabase.removeChannel(presenceChannelRef.current) }
-  }, [router]);
+  // 🛰️ İŞLERİ GETİR (Aktif veya Tamamlanan)
+  const veriGetir = useCallback(async () => {
+    const durumlar = mod === 'tamamlandi' ? ['Tamamlandi'] : ['Islemde', 'Calisiliyor', 'Durduruldu', 'Beklemede'];
+    const { data } = await supabase.from('ihbarlar').select(`*, profiles:atanan_personel(full_name)`).in('durum', durumlar);
+    setIsler(data || []);
+  }, [mod]);
 
-  const createStaffIcon = (role: string) => {
+  useEffect(() => { veriGetir(); const int = setInterval(veriGetir, 10000); return () => clearInterval(int); }, [veriGetir]);
+
+  // 🎨 ÖZEL İKONLAR
+  const createIcon = (type: 'ihbar' | 'personel', color: string = '#f97316') => {
     if (!L) return null;
-    const color = role.includes('ADMIN') ? '#f97316' : '#22c55e';
     return L.divIcon({
-      html: `
-        <div class="radar-marker">
-          <div class="dot" style="background-color: ${color}; box-shadow: 0 0 10px ${color};"></div>
-          <div class="pulse" style="border-color: ${color};"></div>
-        </div>`,
-      className: 'custom-staff-marker',
-      iconSize: [20, 20]
+      html: `<div class="marker-container ${type === 'personel' ? 'radar' : ''}">
+               <div class="main-dot" style="background:${color}"></div>
+               ${type === 'personel' ? `<div class="pulse" style="border-color:${color}"></div>` : ''}
+             </div>`,
+      className: 'custom-marker',
+      iconSize: [30, 30]
     });
   };
 
-  const focusUser = (user: any) => {
-    setSelectedUser(user)
-    setMapCenter([user.lat, user.lng])
-  }
-
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0a0b0e] text-white font-black italic uppercase overflow-hidden">
-      
-      {/* 🛠️ ÜST OPERASYON PANELİ */}
-      <div className="p-5 bg-[#111318] border-b border-gray-800 flex items-center justify-between z-[1000] shadow-2xl shrink-0">
-        <div className="flex items-center gap-6">
-          <button onClick={() => router.push('/dashboard')} className="p-3 bg-gray-900 border border-white/5 rounded-2xl hover:bg-orange-600 transition-all">
-            <ChevronLeft size={20} />
-          </button>
-          <div>
-            <h1 className="text-xl tracking-tighter leading-none mb-1">CANLI <span className="text-orange-500">OPERASYON TAKİBİ</span></h1>
-            <span className="text-[9px] text-green-500 flex items-center gap-1 tracking-[0.2em]">
-               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> {onlineUsers.length} PERSONEL SAHADA
-            </span>
-          </div>
+    <div className="h-screen flex flex-col bg-[#020617] text-white font-black italic uppercase">
+      {/* ÜST KOMUTA PANELİ */}
+      <div className="p-4 bg-slate-900 border-b border-white/10 flex flex-wrap justify-between items-center gap-4 z-[1000]">
+        <div className="flex items-center gap-4">
+          <button onClick={() => router.push('/dashboard')} className="bg-orange-600 px-4 py-2 rounded-xl text-[10px]">← GERİ</button>
+          <h1 className="text-sm">SAHA 360 // HİBRİT MERKEZ</h1>
         </div>
-        <div className="hidden md:flex items-center gap-6">
-           <Radio size={18} className="text-orange-500 animate-pulse" />
-           <span className="text-[10px] text-blue-400">RADAR SİSTEMİ AKTİF</span>
+        
+        <div className="flex bg-black/40 p-1 rounded-2xl border border-white/5">
+          <button onClick={() => setMod('aktif')} className={`px-4 py-2 rounded-xl text-[9px] ${mod === 'aktif' ? 'bg-blue-600' : 'text-gray-500'}`}>🛰️ AKTİF</button>
+          <button onClick={() => setMod('tamamlandi')} className={`px-4 py-2 rounded-xl text-[9px] ${mod === 'tamamlandi' ? 'bg-green-600' : 'text-gray-500'}`}>🏁 BİTEN</button>
+          <button onClick={() => setMod('canli')} className={`px-4 py-2 rounded-xl text-[9px] ${mod === 'canli' ? 'bg-orange-600' : 'text-gray-500'}`}>📡 CANLI KONUM</button>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col md:flex-row relative">
-        
-        {/* 🏰 SOL PERSONEL LİSTESİ */}
-        <div className="w-full md:w-80 bg-[#111318]/98 backdrop-blur-3xl border-r border-gray-800 flex flex-col z-[500] shadow-2xl">
-          <div className="p-6 border-b border-gray-800/50 bg-black/20 shrink-0">
-            <h2 className="text-[10px] text-gray-500 tracking-[0.3em] flex items-center gap-2">
-              <Target size={14} className="text-orange-500" /> TAKİP LİSTESİ
-            </h2>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-            {onlineUsers.map((u) => (
-              <div 
-                key={u.id}
-                onClick={() => focusUser(u)}
-                className={`group p-5 rounded-[2rem] border transition-all duration-300 cursor-pointer ${selectedUser?.id === u.id ? 'bg-orange-600 border-orange-400' : 'bg-[#1a1c23] border-white/5 hover:border-orange-500/50'}`}
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex flex-col">
-                    <span className="text-[12px] font-black text-white">{u.name}</span>
-                    <span className="text-[8px] text-gray-400">{u.role}</span>
-                  </div>
-                  <Activity size={14} className="text-white animate-pulse" />
-                </div>
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {/* LİSTE PANELİ */}
+        <div className="w-full md:w-80 bg-slate-900/50 backdrop-blur-xl border-r border-white/5 overflow-y-auto p-4 custom-scrollbar z-20">
+          <p className="text-[9px] text-gray-500 mb-4 tracking-widest">{mod === 'canli' ? 'SAHADAKİ EKİPLER' : 'OPERASYON LİSTESİ'}</p>
+          <div className="space-y-3">
+            {mod === 'canli' ? onlineUsers.map(u => (
+              <div key={u.id} onClick={() => setMapCenter([u.lat, u.lng])} className="bg-orange-950/20 border border-orange-500/30 p-4 rounded-3xl cursor-pointer">
+                <p className="text-xs text-orange-500">{u.name}</p>
+                <p className="text-[8px] text-gray-400">{u.role} - SON: {u.lastSeen}</p>
+              </div>
+            )) : isler.map(is => (
+              <div key={is.id} onClick={() => setMapCenter([is.enlem, is.boylam])} className="bg-slate-800/40 border border-white/5 p-4 rounded-3xl cursor-pointer hover:border-blue-500 transition-all">
+                <p className="text-xs text-blue-400">{is.ihbar_veren_ad_soyad}</p>
+                <p className="text-[9px] text-gray-500 truncate">{is.konu}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* 🗺️ HARİTA ALANI */}
-        <div className="flex-1 relative z-10 bg-[#0d0f14]">
+        {/* HARİTA */}
+        <div className="flex-1 bg-slate-950 relative z-10">
           {L && (
-            <MapContainer 
-              center={mapCenter} 
-              zoom={13} 
-              zoomControl={false}
-              className="h-full w-full"
-              style={{ background: '#0d0f14' }}
-            >
-              <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; SAHA 360'
-              />
-              {onlineUsers.map((u) => (
-                <Marker key={u.id} position={[u.lat, u.lng]} icon={createStaffIcon(u.role)}>
-                  <Popup>
-                    <div className="p-1 font-black italic uppercase text-[10px] text-black">
-                      <p className="text-orange-600">{u.name}</p>
-                      <p>{u.role}</p>
-                    </div>
-                  </Popup>
+            <MapContainer center={mapCenter} zoom={13} className="h-full w-full">
+              <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+              
+              {/* İŞ PİNLERİ */}
+              {isler.map(is => (
+                <Marker key={is.id} position={[is.enlem, is.boylam]} icon={createIcon('ihbar', is.durum === 'Tamamlandi' ? '#22c55e' : '#3b82f6')}>
+                  <Popup><div className="text-black text-[10px] font-bold">{is.ihbar_veren_ad_soyad}<br/>{is.durum}</div></Popup>
                 </Marker>
               ))}
+
+              {/* CANLI PERSONEL PİNLERİ */}
+              {mod === 'canli' && onlineUsers.map(u => (
+                <Marker key={u.id} position={[u.lat, u.lng]} icon={createIcon('personel', '#f97316')}>
+                  <Popup><div className="text-black text-[10px] font-bold">{u.name} (SAHADA)</div></Popup>
+                </Marker>
+              ))}
+              
               <MapUpdater center={mapCenter} />
             </MapContainer>
           )}
@@ -188,12 +130,10 @@ export default function CanliTakipPage() {
       </div>
 
       <style jsx global>{`
-        .radar-marker { position: relative; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
-        .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid white; z-index: 2; }
-        .pulse { position: absolute; width: 100%; height: 100%; border: 2px solid; border-radius: 50%; animation: radar-pulse 2s infinite; opacity: 0; }
-        @keyframes radar-pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(3.5); opacity: 0; } }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+        .marker-container { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; }
+        .main-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        .radar .pulse { position: absolute; width: 30px; height: 30px; border: 2px solid; border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(3); opacity: 0; } }
       `}</style>
     </div>
   )
