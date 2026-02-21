@@ -139,14 +139,52 @@ export default function HibritKomutaMerkezi() {
             <MapContainer center={mapCenter} zoom={13} zoomControl={false} className="h-full w-full">
               <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
               
-              {/* İHBARLAR VE MÜHÜRLER */}
-              {isler.map(is => (
-                <div key={is.id}>
-                  {is.enlem && <Marker position={[is.enlem, is.boylam]} icon={createIcon('ihbar', '#3b82f6')}><Popup><div className="text-black text-[10px] font-bold">BAŞLANGIÇ: {is.ihbar_veren_ad_soyad}</div></Popup></Marker>}
-                  {is.varis_enlem && <Marker position={[is.varis_enlem, is.varis_boylam]} icon={createIcon('muhur', '#eab308')}><Popup><div className="text-black text-[10px] font-bold">VARIŞ NOKTASI</div></Popup></Marker>}
-                  {is.bitis_enlem && <Marker position={[is.bitis_enlem, is.bitis_boylam]} icon={createIcon('muhur', '#22c55e')}><Popup><div className="text-black text-[10px] font-bold">BİTİŞ NOKTASI</div></Popup></Marker>}
-                </div>
-              ))}
+            {/* İHBARLAR VE MÜHÜRLER */}
+{isler.map(is => (
+  <div key={is.id}>
+    {/* 1. BAŞLANGIÇ PİNİ (Mavi) */}
+    {is.enlem && (
+      <Marker position={[is.enlem, is.boylam]} icon={createIcon('ihbar', '#3b82f6')}>
+        <Popup>
+          <div className="p-2 font-black uppercase italic text-[10px] text-black leading-tight">
+            <p className="text-blue-600 mb-1 border-b border-gray-200">🚀 BAŞLANGIÇ NOKTASI</p>
+            <p><span className="text-gray-500">İŞ:</span> {is.konu}</p>
+            <p><span className="text-gray-500">SORUMLU:</span> {is.profiles?.full_name || 'BELİRTİLMEDİ'}</p>
+            <p><span className="text-gray-500">SAAT:</span> {new Date(is.created_at).toLocaleTimeString('tr-TR')}</p>
+          </div>
+        </Popup>
+      </Marker>
+    )}
+
+    {/* 2. VARIŞ MÜHÜRÜ (Sarı) */}
+    {is.varis_enlem && (
+      <Marker position={[is.varis_enlem, is.varis_boylam]} icon={createIcon('muhur', '#eab308')}>
+        <Popup>
+          <div className="p-2 font-black uppercase italic text-[10px] text-black leading-tight">
+            <p className="text-yellow-600 mb-1 border-b border-gray-200">📍 VARIŞ MÜHÜRÜ</p>
+            <p><span className="text-gray-500">PERSONEL:</span> {is.profiles?.full_name}</p>
+            {/* Eğer varis_saati kolonu varsa buraya ekleyebilirsin, yoksa updated_at kullanılır */}
+            <p className="text-[8px] text-gray-400 mt-1">LOKASYON DOĞRULANDI</p>
+          </div>
+        </Popup>
+      </Marker>
+    )}
+
+    {/* 3. BİTİŞ MÜHÜRÜ (Yeşil) */}
+    {is.bitis_enlem && (
+      <Marker position={[is.bitis_enlem, is.bitis_boylam]} icon={createIcon('muhur', '#22c55e')}>
+        <Popup>
+          <div className="p-2 font-black uppercase italic text-[10px] text-black leading-tight">
+            <p className="text-green-600 mb-1 border-b border-gray-200">🏁 GÖREV TAMAMLANDI</p>
+            <p><span className="text-gray-500">KONU:</span> {is.konu}</p>
+            <p><span className="text-gray-500">BİTİREN:</span> {is.profiles?.full_name}</p>
+            <p><span className="text-gray-500">KAPANIŞ:</span> {new Date(is.updated_at).toLocaleTimeString('tr-TR')}</p>
+          </div>
+        </Popup>
+      </Marker>
+    )}
+  </div>
+))}
 
               {/* CANLI PERSONEL (Radar Efektiyle) */}
               {onlineUsers.map(u => (
